@@ -137,7 +137,7 @@ st.sidebar.header("⚙️ 운전 조건")
 
 inlet_pressure = st.sidebar.slider(
     "입구 압력 (MPa)",
-    min_value=0.5, max_value=2.0, value=DEFAULT_INLET_PRESSURE_MPA, step=0.05,
+    min_value=0.1, max_value=2.0, value=0.4, step=0.05,
     help="교차배관(Cross Main) 입구의 설계 압력입니다.",
 )
 
@@ -152,7 +152,7 @@ st.sidebar.header("🔧 용접 비드 설정")
 
 bead_height = st.sidebar.slider(
     "기존 기술 비드 높이 (mm)",
-    min_value=0.1, max_value=3.0, value=DEFAULT_BEAD_HEIGHT_MM, step=0.1,
+    min_value=0.1, max_value=5.0, value=DEFAULT_BEAD_HEIGHT_MM, step=0.1,
     help="기존 용접 기술의 내면 비드 돌출 높이입니다.",
 )
 
@@ -184,7 +184,7 @@ pump_model = st.sidebar.radio(
 st.sidebar.header("🎲 시뮬레이션")
 
 mc_iterations = st.sidebar.number_input(
-    "몬테카를로 반복 횟수", min_value=10, max_value=1000,
+    "몬테카를로 반복 횟수", min_value=10, max_value=10000,
     value=DEFAULT_MC_ITERATIONS, step=10,
 )
 
@@ -1199,6 +1199,30 @@ if run_button or "results" in st.session_state:
                                 run.font.size = Pt(9)
                 return t
 
+            # ── 차트 이미지 삽입 헬퍼 ──
+            try:
+                _test_fig = go.Figure()
+                _test_fig.to_image(format="png", engine="kaleido", width=10, height=10)
+                charts_available = True
+                del _test_fig
+            except Exception:
+                charts_available = False
+
+            fig_num = [0]
+
+            def add_chart(fig, caption, w=6.0, fw=1200, fh=600):
+                """Plotly Figure → PNG → DOCX 이미지 삽입 + 캡션"""
+                fig_num[0] += 1
+                png = fig.to_image(format="png", width=fw, height=fh, scale=2, engine="kaleido")
+                doc.add_picture(io.BytesIO(png), width=Inches(w))
+                doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                cap = doc.add_paragraph()
+                cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                r = cap.add_run(f"그림 {fig_num[0]}. {caption}")
+                r.font.size = Pt(9)
+                r.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
+                r.italic = True
+
             topo_kr = "Full Grid (격자형)" if params.get("topology") == "grid" else "Tree (가지형)"
             now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
             tp = mc_results["terminal_pressures"]
@@ -1268,6 +1292,139 @@ if run_button or "results" in st.session_state:
                 ],
             )
 
+            # ── Section 1 차트 삽입 ──
+            if charts_available:
+                worst_A_doc = case_results["case_A"]
+                worst_B_doc = case_results["case_B"]
+                n_h_doc = params["heads_per_branch"]
+                n_b_doc = params["num_branches"]
+
+                # 1.3 압력 프로파일 차트
+                doc.add_paragraph()
+                add_heading_styled("1.3 압력 프로파일 (Pressure Profile)", level=2)
+                ps_doc = sens_results.get("pipe_sizes", [])
+                labels_doc = ["입구"] + [
+                    f"H#{i+1} ({ps_doc[i]})" if i < len(ps_doc) else f"H#{i+1}"
+                    for i in range(n_h_doc)
+                ]
+                fig_p_doc = go.Figure()
+                fig_p_doc.add_trace(go.Scatter(
+                    x=labels_doc, y=worst_A_doc["pressures_mpa"],
+                    name=f"Case A (비드 {params['bead_height']}mm)",
+                    mode="lines+markers",
+                    line=dict(color="#EF553B", dash="dash", width=2), marker=dict(size=8),
+                ))
+                fig_p_doc.add_trace(go.Scatter(
+                    x=labels_doc, y=worst_B_doc["pressures_mpa"],
+                    name="Case B (비드 0mm, 신기술)",
+                    mode="lines+markers",
+                    line=dict(color="#636EFA", width=3), marker=dict(size=8),
+                ))
+                fig_p_doc.add_hline(y=MIN_TERMINAL_PRESSURE_MPA, line_dash="dot",
+                                    line_color="green", line_width=2,
+                                    annotation_text=f"최소 방수압 {MIN_TERMINAL_PRESSURE_MPA} MPa")
+                fig_p_doc.update_layout(
+                    xaxis_title="위치", yaxis_title="압력 (MPa)",
+                    template="plotly_white", height=500,
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                    font=dict(family="Arial", size=13),
+                )
+                add_chart(fig_p_doc, "최악 가지배관 전 구간 누적 압력 프로파일")
+
+                # 구간별 상세 데이터 테이블
+                det_A = worst_A_doc.get("segment_details", [])
+                det_B = worst_B_doc.get("segment_details", [])
+                if det_A and det_B:
+                    seg_rows = []
+                    for i in range(len(det_A)):
+                        seg_rows.append((
+                            str(det_A[i]["head_number"]),
+                            det_A[i]["pipe_size"],
+                            f"{det_A[i]['flow_lpm']:.1f}",
+                            f"{det_A[i]['velocity_ms']:.2f}",
+                            f"{det_A[i]['total_seg_loss_mpa']:.4f}",
+                            f"{det_B[i]['total_seg_loss_mpa']:.4f}",
+                            f"{det_A[i]['pressure_after_mpa']:.4f}",
+                            f"{det_B[i]['pressure_after_mpa']:.4f}",
+                        ))
+                    add_table_from_data(
+                        ["헤드#", "관경", "유량(LPM)", "유속(m/s)",
+                         "A 손실(MPa)", "B 손실(MPa)", "A 잔여(MPa)", "B 잔여(MPa)"],
+                        seg_rows,
+                    )
+
+                # 1.4 가지배관별 말단 압력 비교
+                doc.add_paragraph()
+                add_heading_styled("1.4 가지배관별 말단 압력 비교", level=2)
+                tp_A_all = case_results["system_A"]["all_terminal_pressures"]
+                tp_B_all = case_results["system_B"]["all_terminal_pressures"]
+                fig_br_doc = go.Figure()
+                fig_br_doc.add_trace(go.Bar(
+                    x=[f"B#{i+1}" for i in range(n_b_doc)], y=tp_A_all,
+                    name=f"Case A (비드 {params['bead_height']}mm)",
+                    marker_color="#EF553B", opacity=0.7,
+                ))
+                fig_br_doc.add_trace(go.Bar(
+                    x=[f"B#{i+1}" for i in range(n_b_doc)], y=tp_B_all,
+                    name="Case B (비드 0mm)",
+                    marker_color="#636EFA", opacity=0.7,
+                ))
+                fig_br_doc.add_hline(y=MIN_TERMINAL_PRESSURE_MPA, line_dash="dot", line_color="green")
+                fig_br_doc.update_layout(
+                    barmode="group", xaxis_title="가지배관", yaxis_title="말단 압력 (MPa)",
+                    template="plotly_white", height=400,
+                    font=dict(family="Arial", size=13),
+                )
+                add_chart(fig_br_doc, "전체 가지배관 말단 압력 비교")
+
+                # 가지배관별 데이터 테이블
+                br_rows = []
+                for i in range(n_b_doc):
+                    br_rows.append((
+                        f"B#{i+1}",
+                        f"{tp_A_all[i]:.4f}",
+                        f"{tp_B_all[i]:.4f}",
+                        f"{(tp_B_all[i] - tp_A_all[i])*1000:.2f}",
+                    ))
+                add_table_from_data(["가지배관", "Case A (MPa)", "Case B (MPa)", "차이 (kPa)"], br_rows)
+
+                # 1.5 Hardy-Cross 수렴 이력 (Grid 전용)
+                sys_A_doc = case_results.get("system_A", {})
+                if sys_A_doc.get("topology") == "grid" and sys_A_doc.get("imbalance_history"):
+                    doc.add_paragraph()
+                    add_heading_styled("1.5 Hardy-Cross 수렴 이력", level=2)
+                    hist_imb = sys_A_doc["imbalance_history"]
+                    hist_dq = sys_A_doc.get("delta_Q_history", [])
+                    fig_conv_doc = make_subplots(
+                        rows=1, cols=2,
+                        subplot_titles=("루프 수두 불균형 수렴", "유량 보정값 수렴"),
+                        horizontal_spacing=0.15,
+                    )
+                    fig_conv_doc.add_trace(go.Scatter(
+                        x=list(range(1, len(hist_imb)+1)), y=hist_imb,
+                        mode="lines", name="Max Imbalance (m)",
+                        line=dict(color="#636EFA", width=2),
+                    ), row=1, col=1)
+                    fig_conv_doc.add_hline(y=0.001, line_dash="dash", line_color="red", row=1, col=1)
+                    if hist_dq:
+                        fig_conv_doc.add_trace(go.Scatter(
+                            x=list(range(1, len(hist_dq)+1)), y=hist_dq,
+                            mode="lines", name="Max dQ (LPM)",
+                            line=dict(color="#EF553B", width=2),
+                        ), row=1, col=2)
+                        fig_conv_doc.add_hline(y=0.0001, line_dash="dash", line_color="red", row=1, col=2)
+                    fig_conv_doc.update_yaxes(type="log", row=1, col=1)
+                    fig_conv_doc.update_yaxes(type="log", row=1, col=2)
+                    fig_conv_doc.update_xaxes(title_text="반복 횟수", row=1, col=1)
+                    fig_conv_doc.update_xaxes(title_text="반복 횟수", row=1, col=2)
+                    fig_conv_doc.update_layout(
+                        template="plotly_white", height=420,
+                        font=dict(family="Arial", size=13), showlegend=False,
+                    )
+                    add_chart(fig_conv_doc,
+                              f"Hardy-Cross 수렴 이력 (총 {sys_A_doc.get('hc_iterations', '?')}회)",
+                              fw=1400, fh=500)
+
             # ═══ Section 2: 몬테카를로 통계 분석 ═══
             doc.add_page_break()
             add_heading_styled("2. 몬테카를로 통계 분석 (Statistical Analysis)", level=1)
@@ -1301,6 +1458,73 @@ if run_button or "results" in st.session_state:
             else:
                 run_val.font.color.rgb = green
                 p_crit.add_run(" — 전 시행에서 규정을 만족합니다.").font.color.rgb = green
+
+            # ── Section 2 차트 삽입: MC 히스토그램 + 박스플롯 ──
+            if charts_available:
+                doc.add_paragraph()
+                add_heading_styled("2.2 말단 압력 분포 및 결함 빈도", level=2)
+                mc_tp_doc = mc_results["terminal_pressures"]
+                mean_p_doc = float(np.mean(mc_tp_doc))
+                n_b_mc = params["num_branches"]
+
+                fig_mc_doc = make_subplots(
+                    rows=1, cols=2,
+                    subplot_titles=(
+                        f"최악 말단 압력 분포 (N={mc_n})",
+                        "가지배관별 결함 빈도",
+                    ),
+                    horizontal_spacing=0.15,
+                )
+                fig_mc_doc.add_trace(go.Histogram(
+                    x=mc_tp_doc, nbinsx=30,
+                    marker_color="rgba(99,110,250,0.7)",
+                    name="빈도",
+                ), row=1, col=1)
+                fig_mc_doc.add_vline(
+                    x=MIN_TERMINAL_PRESSURE_MPA, line_dash="dash", line_color="red",
+                    annotation_text=f"최소 기준 ({MIN_TERMINAL_PRESSURE_MPA} MPa)", row=1, col=1,
+                )
+                fig_mc_doc.add_vline(
+                    x=mean_p_doc, line_dash="dot", line_color="#00CC96",
+                    annotation_text=f"μ = {mean_p_doc:.4f}", row=1, col=1,
+                )
+                fig_mc_doc.add_trace(go.Bar(
+                    x=[f"B#{i+1}" for i in range(n_b_mc)],
+                    y=list(mc_results["defect_frequency"]),
+                    marker_color="rgba(239,85,59,0.7)", name="결함 빈도",
+                ), row=1, col=2)
+                fig_mc_doc.update_xaxes(title_text="말단 압력 (MPa)", row=1, col=1)
+                fig_mc_doc.update_yaxes(title_text="빈도 (Frequency)", row=1, col=1)
+                fig_mc_doc.update_xaxes(title_text="가지배관 (Branch)", row=1, col=2)
+                fig_mc_doc.update_yaxes(title_text="결함 빈도 (Count)", row=1, col=2)
+                fig_mc_doc.update_layout(
+                    template="plotly_white", height=500, showlegend=False,
+                    font=dict(family="Arial", size=13),
+                )
+                add_chart(fig_mc_doc, f"몬테카를로 시뮬레이션 — 말단 압력 분포 및 결함 빈도 (N={mc_n})",
+                          fw=1400, fh=500)
+
+                # 2.3 박스플롯
+                doc.add_paragraph()
+                add_heading_styled("2.3 말단 압력 산포도 (Box Plot)", level=2)
+                fig_box_doc = go.Figure()
+                fig_box_doc.add_trace(go.Box(
+                    y=mc_tp_doc, name="말단 압력",
+                    boxpoints="all", jitter=0.3, pointpos=-1.5,
+                    marker=dict(color="rgba(99,110,250,0.4)", size=4),
+                    line=dict(color="#636EFA"),
+                ))
+                fig_box_doc.add_hline(y=MIN_TERMINAL_PRESSURE_MPA, line_dash="dot",
+                                      line_color="red",
+                                      annotation_text=f"최소 기준 ({MIN_TERMINAL_PRESSURE_MPA} MPa)")
+                fig_box_doc.add_hline(y=MAX_TERMINAL_PRESSURE_MPA, line_dash="dot",
+                                      line_color="orange",
+                                      annotation_text=f"최대 기준 ({MAX_TERMINAL_PRESSURE_MPA} MPa)")
+                fig_box_doc.update_layout(
+                    yaxis_title="말단 압력 (MPa)", template="plotly_white", height=400,
+                    font=dict(family="Arial", size=13),
+                )
+                add_chart(fig_box_doc, "몬테카를로 말단 압력 산포도 (Box Plot + Jitter)")
 
             # ═══ Section 3: 기술 비교 및 경제성 ═══
             add_heading_styled("3. 기술 비교 및 경제성 (Comparative & Economic Analysis)", level=1)
@@ -1341,9 +1565,93 @@ if run_button or "results" in st.session_state:
             else:
                 doc.add_paragraph("펌프 운전점을 찾을 수 없어 경제성 분석이 생략되었습니다.")
 
-            # ═══ Section 4: NFPC 규정 준수 판정 ═══
+            # ── Section 3 차트: P-Q 곡선 ──
+            if charts_available and op_A and op_B:
+                doc.add_paragraph()
+                add_heading_styled("3.3 펌프 P-Q 곡선 및 운전점", level=2)
+                fig_pq_doc = go.Figure()
+                Q_pump_d, H_pump_d = pump.get_curve_points(100)
+                fig_pq_doc.add_trace(go.Scatter(
+                    x=Q_pump_d, y=H_pump_d,
+                    name=f"펌프: {pump.name}", line=dict(color="#00CC96", width=3),
+                ))
+                sys_A_c = res["sys_A"]
+                sys_B_c = res["sys_B"]
+                Q_sA_d, H_sA_d = sys_A_c.get_curve_points(30, q_max=pump.max_flow)
+                Q_sB_d, H_sB_d = sys_B_c.get_curve_points(30, q_max=pump.max_flow)
+                fig_pq_doc.add_trace(go.Scatter(
+                    x=Q_sA_d, y=H_sA_d,
+                    name=f"시스템 A (비드 {params['bead_height']}mm)",
+                    line=dict(color="#EF553B", dash="dash", width=2),
+                ))
+                fig_pq_doc.add_trace(go.Scatter(
+                    x=Q_sB_d, y=H_sB_d,
+                    name="시스템 B (비드 0mm)",
+                    line=dict(color="#636EFA", dash="dash", width=2),
+                ))
+                fig_pq_doc.add_trace(go.Scatter(
+                    x=[op_A["flow_lpm"]], y=[op_A["head_m"]],
+                    name=f"운전점 A ({op_A['flow_lpm']:.0f}LPM, {op_A['head_m']:.1f}m)",
+                    mode="markers", marker=dict(size=15, color="#EF553B", symbol="circle"),
+                ))
+                fig_pq_doc.add_trace(go.Scatter(
+                    x=[op_B["flow_lpm"]], y=[op_B["head_m"]],
+                    name=f"운전점 B ({op_B['flow_lpm']:.0f}LPM, {op_B['head_m']:.1f}m)",
+                    mode="markers", marker=dict(size=15, color="#636EFA", symbol="circle"),
+                ))
+                fig_pq_doc.update_layout(
+                    xaxis_title="유량 Q (LPM)", yaxis_title="양정 H (m)",
+                    template="plotly_white", height=500,
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                    font=dict(family="Arial", size=13),
+                )
+                add_chart(fig_pq_doc, "펌프 P-Q 곡선 및 시스템 운전점")
+
+            # ═══ Section 4: 민감도 분석 ═══
             doc.add_page_break()
-            add_heading_styled("4. NFPC 규정 준수 판정 (Code Compliance)", level=1)
+            add_heading_styled("4. 민감도 분석 (Sensitivity Analysis)", level=1)
+            doc.add_paragraph(
+                f"가지배관 B#{sens_results['worst_branch']+1}의 각 헤드에 "
+                f"비드({params['bead_height']}mm) 단독 배치 시 말단 압력 변화량을 분석합니다."
+            )
+
+            if charts_available:
+                n_h_sens = params["heads_per_branch"]
+                ps_sens = sens_results.get("pipe_sizes", [])
+                crit_pt = sens_results["critical_point"]
+                colors_s = ["#EF553B" if i == crit_pt else "#636EFA" for i in range(n_h_sens)]
+                fig_s_doc = go.Figure()
+                fig_s_doc.add_trace(go.Bar(
+                    x=[f"H#{i+1} ({ps_sens[i]})" if i < len(ps_sens) else f"H#{i+1}" for i in range(n_h_sens)],
+                    y=[d * 1000 for d in sens_results["deltas"]],
+                    marker_color=colors_s,
+                    text=[f"{d*1000:.2f}" for d in sens_results["deltas"]],
+                    textposition="outside",
+                ))
+                fig_s_doc.update_layout(
+                    xaxis_title="헤드 위치", yaxis_title="압력 강하 (kPa)",
+                    template="plotly_white", height=450,
+                    font=dict(family="Arial", size=13),
+                )
+                add_chart(fig_s_doc, f"민감도 분석 — 헤드 위치별 압력 강하 (임계점: H#{crit_pt+1})")
+
+            # 민감도 순위 테이블
+            add_heading_styled("4.1 민감도 순위", level=2)
+            ps_rank = sens_results.get("pipe_sizes", [])
+            sens_rows = []
+            for rank, idx in enumerate(sens_results["ranking"]):
+                sens_rows.append((
+                    str(rank + 1),
+                    f"Head #{idx+1}",
+                    ps_rank[idx] if idx < len(ps_rank) else "N/A",
+                    f"{sens_results['single_bead_pressures'][idx]:.4f}",
+                    f"{sens_results['deltas'][idx]*1000:.2f}",
+                ))
+            add_table_from_data(["순위", "위치", "관경", "말단 압력 (MPa)", "강하량 (kPa)"], sens_rows)
+
+            # ═══ Section 5: NFPC 규정 준수 판정 ═══
+            doc.add_page_break()
+            add_heading_styled("5. NFPC 규정 준수 판정 (Code Compliance)", level=1)
 
             def pf(cond):
                 return "PASS" if cond else "FAIL"
