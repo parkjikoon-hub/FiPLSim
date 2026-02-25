@@ -40,12 +40,31 @@ from simulation import run_dynamic_monte_carlo, run_dynamic_sensitivity, run_var
 # ──────────────────────────────────────────────
 # ? 페이지 설정
 # ──────────────────────────────────────────────
+_favicon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "favicon.png")
+_page_icon = _favicon_path if os.path.exists(_favicon_path) else "🔥"
+
 st.set_page_config(
     page_title="FiPLSim",
-    page_icon="🔥",
+    page_icon=_page_icon,
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+# ── 모바일 홈화면 아이콘 메타태그 ──
+_apple_icon = os.path.join(os.path.dirname(os.path.abspath(__file__)), "apple-touch-icon.png")
+if os.path.exists(_apple_icon):
+    import base64 as _b64
+    with open(_apple_icon, "rb") as _f:
+        _icon_b64 = _b64.b64encode(_f.read()).decode()
+    st.markdown(
+        f'<link rel="apple-touch-icon" href="data:image/png;base64,{_icon_b64}">'
+        f'<link rel="icon" type="image/png" sizes="192x192" '
+        f'href="data:image/png;base64,{_icon_b64}">'
+        f'<meta name="apple-mobile-web-app-capable" content="yes">'
+        f'<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">'
+        f'<meta name="apple-mobile-web-app-title" content="FiPLSim">',
+        unsafe_allow_html=True,
+    )
 
 st.title("🔥 FiPLSim: Advanced Fire Protection Pipe Let Simulator")
 st.caption("동적 배관망 생성 및 몬테카를로 기반 유체역학 해석 엔진 (PLS)")
