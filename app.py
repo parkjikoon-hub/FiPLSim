@@ -79,28 +79,91 @@ with _theme_col2:
 
 if st.session_state["theme_mode"] == "light":
     st.markdown("""<style>
-        [data-testid="stAppViewContainer"], [data-testid="stApp"] {
-            background-color: #FFFFFF; color: #262730;
+        /* ── 전역 배경 및 텍스트 ── */
+        [data-testid="stAppViewContainer"], [data-testid="stApp"],
+        .main, .block-container {
+            background-color: #FFFFFF !important; color: #262730 !important;
         }
-        [data-testid="stSidebar"] {
-            background-color: #F0F2F6; color: #262730;
+        [data-testid="stSidebar"], [data-testid="stSidebar"] > div {
+            background-color: #F0F2F6 !important; color: #262730 !important;
         }
-        [data-testid="stSidebar"] * { color: #262730; }
-        [data-testid="stAppViewContainer"] h1,
-        [data-testid="stAppViewContainer"] h2,
-        [data-testid="stAppViewContainer"] h3,
-        [data-testid="stAppViewContainer"] p,
-        [data-testid="stAppViewContainer"] span,
-        [data-testid="stAppViewContainer"] label,
-        [data-testid="stAppViewContainer"] div {
+        header[data-testid="stHeader"] { background-color: #FFFFFF !important; }
+
+        /* ── 모든 텍스트 요소 ── */
+        h1, h2, h3, h4, h5, h6, p, span, label, div, li, td, th,
+        .stMarkdown, .stCaption, [data-testid="stMetricValue"],
+        [data-testid="stMetricLabel"], [class*="st-"] {
             color: #262730 !important;
         }
-        [data-testid="stMetricValue"] { color: #262730 !important; }
-        [data-testid="stMetricDelta"] svg { fill: #262730; }
-        .stTabs [data-baseweb="tab"] { color: #262730; }
-        [data-testid="stDataFrame"] { background-color: #FFFFFF; }
-        .stMarkdown, .stCaption { color: #262730 !important; }
-        header[data-testid="stHeader"] { background-color: #FFFFFF; }
+
+        /* ── 입력 필드 (number_input, text_input, selectbox 등) ── */
+        [data-testid="stNumberInput"] input,
+        [data-testid="stTextInput"] input,
+        input[type="number"], input[type="text"],
+        [data-baseweb="input"] input,
+        [data-baseweb="input"],
+        [data-baseweb="base-input"] {
+            background-color: #FFFFFF !important;
+            color: #262730 !important;
+            border-color: #CCC !important;
+        }
+
+        /* ── selectbox / dropdown ── */
+        [data-baseweb="select"] > div,
+        [data-baseweb="select"] span,
+        [data-baseweb="popover"] li {
+            background-color: #FFFFFF !important;
+            color: #262730 !important;
+        }
+
+        /* ── number_input 버튼 (+/-) ── */
+        [data-testid="stNumberInput"] button {
+            background-color: #E8E8E8 !important;
+            color: #262730 !important;
+            border-color: #CCC !important;
+        }
+
+        /* ── 슬라이더 ── */
+        [data-testid="stSlider"] div[data-baseweb="slider"] div {
+            background-color: #E0E0E0 !important;
+        }
+
+        /* ── 탭 ── */
+        .stTabs [data-baseweb="tab-list"] { background-color: #FFFFFF !important; }
+        .stTabs [data-baseweb="tab"] { color: #262730 !important; }
+
+        /* ── 테이블 / 데이터프레임 ── */
+        [data-testid="stDataFrame"], [data-testid="stTable"],
+        table, thead, tbody, tr, td, th {
+            background-color: #FFFFFF !important;
+            color: #262730 !important;
+        }
+
+        /* ── 코드 블록 / 다이어그램 영역 ── */
+        [data-testid="stCodeBlock"], pre, code {
+            background-color: #F5F5F5 !important;
+            color: #262730 !important;
+        }
+
+        /* ── 알림/정보 박스 ── */
+        [data-testid="stAlert"] {
+            background-color: #E8F4FD !important;
+            color: #262730 !important;
+        }
+
+        /* ── expander ── */
+        [data-testid="stExpander"] {
+            background-color: #F8F8F8 !important;
+            border-color: #DDD !important;
+        }
+        [data-testid="stExpander"] summary span { color: #262730 !important; }
+
+        /* ── metric delta ── */
+        [data-testid="stMetricDelta"] svg { fill: #262730 !important; }
+
+        /* ── radio / checkbox ── */
+        [data-testid="stRadio"] label span,
+        [data-testid="stCheckbox"] label span { color: #262730 !important; }
     </style>""", unsafe_allow_html=True)
 
 st.sidebar.divider()
