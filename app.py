@@ -67,7 +67,7 @@ if os.path.exists(_apple_icon):
     )
 
 st.markdown(
-    '<h1 style="margin-bottom:0">🔥 Fi<span style="color:#4A9EFF">PLS</span>im: '
+    '<h1 style="margin-bottom:0">Fi<span style="color:#4A9EFF">PLS</span>im: '
     'Advanced Fire Protection <span style="color:#4A9EFF">P</span>ipe '
     '<span style="color:#4A9EFF">L</span>et '
     '<span style="color:#4A9EFF">S</span>imulator</h1>',
@@ -92,12 +92,12 @@ if "theme_mode" not in st.session_state:
 
 _theme_col1, _theme_col2 = st.sidebar.columns(2)
 with _theme_col1:
-    if st.button("🌙 다크", use_container_width=True,
+    if st.button(":material/dark_mode: Dark", use_container_width=True,
                  type="primary" if st.session_state["theme_mode"] == "dark" else "secondary"):
         st.session_state["theme_mode"] = "dark"
         st.rerun()
 with _theme_col2:
-    if st.button("☀️ 라이트", use_container_width=True,
+    if st.button(":material/light_mode: Light", use_container_width=True,
                  type="primary" if st.session_state["theme_mode"] == "light" else "secondary"):
         st.session_state["theme_mode"] = "light"
         st.rerun()
@@ -198,7 +198,7 @@ st.sidebar.divider()
 # ══════════════════════════════════════════════
 
 # ── 0. 배관망 토폴로지 선택 ──
-st.sidebar.header("🔀 배관망 구조")
+st.sidebar.header(":material/account_tree: 배관망 구조")
 topology_label = st.sidebar.radio(
     "배관망 토폴로지",
     ["Tree (가지형)", "Full Grid (격자형)"],
@@ -209,11 +209,11 @@ topology_key = "tree" if "Tree" in topology_label else "grid"
 
 if topology_key == "grid":
     st.sidebar.caption(
-        "📐 **Full Grid**: 교차배관 TOP/BOT 2개가 평행 배치되고, "
+        "**Full Grid**: 교차배관 TOP/BOT 2개가 평행 배치되고, "
         "가지배관 양 끝이 연결된 격자 구조입니다. "
         "Hardy-Cross 반복법으로 유량을 수렴 계산합니다."
     )
-    with st.sidebar.expander("⚙️ Hardy-Cross 고급 설정"):
+    with st.sidebar.expander("Hardy-Cross 고급 설정"):
         hc_relaxation = st.slider(
             "이완 계수 (Under-Relaxation Factor)",
             min_value=HC_RELAXATION_MIN,
@@ -226,7 +226,7 @@ if topology_key == "grid":
                  "대규모 배관망(50개 이상)에서는 0.3~0.5를 권장합니다.",
         )
         st.caption(
-            f"📋 **현재 설정**: 이완 계수 = {hc_relaxation} | "
+            f"**현재 설정**: 이완 계수 = {hc_relaxation} | "
             f"최대 반복 = 1,000회 | 수두 허용 오차 = 0.001m | "
             f"유량 허용 오차 = 0.0001 LPM"
         )
@@ -234,7 +234,7 @@ else:
     hc_relaxation = HC_RELAXATION_FACTOR
 
 # ── 1. 동적 배관망 구성 ──
-st.sidebar.header("🏗️ 배관망 구성 (동적 생성)")
+st.sidebar.header(":material/construction: 배관망 구성 (동적 생성)")
 
 num_branches = st.sidebar.number_input(
     "양방향 가지배관 총 개수 (n)",
@@ -264,10 +264,10 @@ head_spacing = st.sidebar.select_slider(
 )
 
 total_heads = num_branches * heads_per_branch
-st.sidebar.info(f"📊 전체 헤드: **{total_heads}개** = {num_branches} 가지배관 × {heads_per_branch} 헤드")
+st.sidebar.info(f"전체 헤드: **{total_heads}개** = {num_branches} 가지배관 × {heads_per_branch} 헤드")
 
 # ── 2. 운전 조건 ──
-st.sidebar.header("⚙️ 운전 조건")
+st.sidebar.header(":material/settings: 운전 조건")
 
 inlet_pressure = st.sidebar.slider(
     "입구 압력 (MPa)",
@@ -282,7 +282,7 @@ design_flow = st.sidebar.slider(
 )
 
 # ── 3. 비드 설정 ──
-st.sidebar.header("🔧 용접 비드 설정")
+st.sidebar.header(":material/build: 용접 비드 설정")
 
 bead_height = st.sidebar.slider(
     "기존 기술 비드 높이 (mm)",
@@ -301,12 +301,12 @@ beads_per_branch = st.sidebar.number_input(
 total_weld_beads = beads_per_branch * num_branches
 if beads_per_branch > 0:
     st.sidebar.caption(
-        f"📌 직관 용접 비드: 가지배관당 **{beads_per_branch}개** × "
+        f"직관 용접 비드: 가지배관당 **{beads_per_branch}개** × "
         f"{num_branches}개 = 전체 **{total_weld_beads}개**"
     )
 
 # ── 4. 펌프 선택 ──
-st.sidebar.header("🔄 펌프 선택")
+st.sidebar.header(":material/water_pump: 펌프 선택")
 
 pump_model = st.sidebar.radio(
     "펌프 모델",
@@ -315,7 +315,7 @@ pump_model = st.sidebar.radio(
 )
 
 # ── 5. 시뮬레이션 파라미터 ──
-st.sidebar.header("🎲 시뮬레이션")
+st.sidebar.header(":material/science: 시뮬레이션")
 
 mc_iterations = st.sidebar.number_input(
     "몬테카를로 반복 횟수", min_value=10, max_value=10000,
@@ -335,7 +335,7 @@ with col_d2:
     )
 
 # ── 6. 경제성 ──
-st.sidebar.header("💰 경제성")
+st.sidebar.header(":material/payments: 경제성")
 
 operating_hours = st.sidebar.number_input(
     "연간 운전시간 (hr)", min_value=500, max_value=8760,
@@ -346,7 +346,7 @@ electricity_rate = st.sidebar.number_input(
     value=int(DEFAULT_ELECTRICITY_RATE_KRW), step=10,
 )
 
-run_button = st.sidebar.button("🚀 시뮬레이션 실행", type="primary", use_container_width=True)
+run_button = st.sidebar.button(":material/rocket_launch: 시뮬레이션 실행", type="primary", use_container_width=True)
 
 
 # ══════════════════════════════════════════════
@@ -378,7 +378,7 @@ if run_button or "results" in st.session_state:
                     if sys_A_res.get("hc_converged") is False:
                         if sys_A_res.get("diverged", False):
                             st.error(
-                                "⚠️ **연산 수렴 실패 (발산 감지)**: "
+                                "**연산 수렴 실패 (발산 감지)**: "
                                 "배관망 규모가 너무 크거나 구조가 불안정합니다. "
                                 "가지배관 개수를 줄이거나 교차배관 구경을 늘려보세요. "
                                 "또는 고급 설정에서 이완 계수를 낮춰보세요 "
@@ -387,7 +387,7 @@ if run_button or "results" in st.session_state:
                             st.stop()
                         else:
                             st.warning(
-                                "⚠️ **연산 수렴 미완료**: "
+                                "**연산 수렴 미완료**: "
                                 f"최대 반복 횟수(1,000회) 내에 수렴하지 못했습니다. "
                                 f"최종 오차: {sys_A_res.get('hc_max_imbalance_m', 0):.6f}m. "
                                 "고급 설정에서 이완 계수를 조정하거나, "
@@ -472,7 +472,7 @@ if run_button or "results" in st.session_state:
             }
 
         except ValidationError as e:
-            st.error(f"⚠️ 입력 오류: {e}")
+            st.error(f"입력 오류: {e}")
             st.stop()
 
     res = st.session_state["results"]
@@ -526,7 +526,7 @@ if run_button or "results" in st.session_state:
             st.metric("에너지 절감", "N/A")
     with kpi4:
         st.metric("0.1 MPa 기준",
-                   "✅ PASS" if case_results["pass_fail_B"] else "❌ FAIL")
+                   "PASS ✔" if case_results["pass_fail_B"] else "FAIL ✘")
 
     st.markdown("---")
 
@@ -539,34 +539,38 @@ if run_button or "results" in st.session_state:
             for v in comp["velocity_violations"]:
                 if v["pipe_type"] == "cross_main":
                     st.error(
-                        f"⚠️ **[{case_label}] NFPC 유속 위반**: "
+                        f"**[{case_label}] NFPC 유속 위반**: "
                         f"교차배관 ({v['pipe_size']}) — "
                         f"**{v['velocity_ms']:.2f} m/s** > {v['limit_ms']} m/s 제한 초과"
                     )
                 else:
                     st.error(
-                        f"⚠️ **[{case_label}] NFPC 유속 위반**: "
+                        f"**[{case_label}] NFPC 유속 위반**: "
                         f"가지배관 B#{v['branch']+1} Head #{v['head']} ({v['pipe_size']}) — "
                         f"**{v['velocity_ms']:.2f} m/s** > {v['limit_ms']} m/s 제한 초과"
                     )
             for v in comp["pressure_violations"]:
                 if v["type"] == "over":
                     st.error(
-                        f"⚠️ **[{case_label}] NFPC 수압 위반**: "
+                        f"**[{case_label}] NFPC 수압 위반**: "
                         f"가지배관 B#{v['branch']+1} — "
                         f"말단 수압 **{v['pressure_mpa']:.4f} MPa** > {v['limit_mpa']} MPa 상한 초과"
                     )
                 else:
                     st.error(
-                        f"⚠️ **[{case_label}] NFPC 수압 위반**: "
+                        f"**[{case_label}] NFPC 수압 위반**: "
                         f"가지배관 B#{v['branch']+1} — "
                         f"말단 수압 **{v['pressure_mpa']:.4f} MPa** < {v['limit_mpa']} MPa 하한 미달"
                     )
 
     # ── 탭 ──
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-        "📈 압력 프로파일", "🔄 P-Q 곡선", "🎲 몬테카를로",
-        "📊 민감도 분석", "📥 데이터 추출", "🔍 변수 스캐닝",
+        ":material/show_chart: 압력 프로파일",
+        ":material/ssid_chart: P-Q 곡선",
+        ":material/casino: 몬테카를로",
+        ":material/bar_chart: 민감도 분석",
+        ":material/download: 데이터 추출",
+        ":material/search: 변수 스캐닝",
     ])
 
     # ═══ Tab 1: 압력 프로파일 ═══
@@ -628,7 +632,7 @@ if run_button or "results" in st.session_state:
         )
         st.plotly_chart(fig_branches, use_container_width=True)
 
-        with st.expander("📋 최악 가지배관 구간별 상세"):
+        with st.expander("최악 가지배관 구간별 상세"):
             det_A = worst_A["segment_details"]
             det_B = worst_B["segment_details"]
             detail_dict = {
@@ -757,7 +761,7 @@ if run_button or "results" in st.session_state:
         st.plotly_chart(fig_pq, use_container_width=True)
 
         if energy:
-            st.markdown("#### 💡 에너지 절감 요약")
+            st.markdown("#### 에너지 절감 요약")
             ec1, ec2, ec3, ec4 = st.columns(4)
             ec1.metric("양정 감소", f"{energy['delta_head_m']:.2f} m")
             ec2.metric("동력 절감", f"{energy['delta_power_kw']:.3f} kW")
@@ -880,7 +884,7 @@ if run_button or "results" in st.session_state:
         crit = sens_results["critical_point"]
         p_sizes = sens_results["pipe_sizes"]
         st.info(
-            f"🎯 **임계점**: Head #{crit+1} ({p_sizes[crit]}) — "
+            f"**임계점**: Head #{crit+1} ({p_sizes[crit]}) — "
             f"압력 강하 {sens_results['deltas'][crit]*1000:.2f} kPa"
         )
 
@@ -912,7 +916,7 @@ if run_button or "results" in st.session_state:
 
     # ═══ Tab 5: 데이터 추출 ═══
     with tab5:
-        st.subheader("📥 시뮬레이션 결과 다운로드")
+        st.subheader("시뮬레이션 결과 다운로드")
 
         def gen_excel() -> bytes:
             buf = io.BytesIO()
@@ -1954,7 +1958,7 @@ if run_button or "results" in st.session_state:
 
         c1, c2 = st.columns(2)
         with c1:
-            st.download_button("📊 Excel 다운로드", gen_excel(),
+            st.download_button("Excel 다운로드", gen_excel(),
                                 "FiPLSim_시뮬레이션_결과.xlsx",
                                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                 use_container_width=True)
@@ -1964,16 +1968,16 @@ if run_button or "results" in st.session_state:
                 "Case A (MPa)": case_results["case_A"]["pressures_mpa"],
                 "Case B (MPa)": case_results["case_B"]["pressures_mpa"],
             }).to_csv(index=False).encode("utf-8-sig")
-            st.download_button("📄 CSV 다운로드", csv,
+            st.download_button("CSV 다운로드", csv,
                                 "FiPLSim_압력_프로파일.csv", "text/csv",
                                 use_container_width=True)
         c3, c4 = st.columns(2)
         with c3:
-            st.download_button("📑 분석 리포트 (HTML)", gen_report_html(),
+            st.download_button("분석 리포트 (HTML)", gen_report_html(),
                                 "FiPLSim_분석_리포트.html", "text/html",
                                 use_container_width=True)
         with c4:
-            st.download_button("📝 분석 리포트 (DOCX)", gen_report_docx(),
+            st.download_button("분석 리포트 (DOCX)", gen_report_docx(),
                                 "FiPLSim_분석_리포트.docx",
                                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                                 use_container_width=True)
@@ -1982,7 +1986,7 @@ if run_button or "results" in st.session_state:
     #  Tab 6: 변수 스캐닝 (Variable Sweep)
     # ═══════════════════════════════════════════
     with tab6:
-        st.header("🔍 연속 변수 스캐닝 (Variable Sweep)")
+        st.header("연속 변수 스캐닝 (Variable Sweep)")
         st.caption("특정 설계 변수를 연속 변화시키며 시스템 임계점(PASS→FAIL)을 자동 탐지합니다.")
 
         # ── 입력 인터페이스 ──
@@ -2006,7 +2010,7 @@ if run_button or "results" in st.session_state:
         n_steps = int((sw_end - sw_start) / sw_step) + 1 if sw_step > 0 else 0
         st.info(f"총 **{n_steps}개** 시뮬레이션 수행 예정 (현재 설정 기준)")
 
-        if st.button("🔍 스캔 시작", use_container_width=True):
+        if st.button(":material/search: 스캔 시작", use_container_width=True):
             with st.spinner(f"변수 스캐닝 중... ({n_steps}개 케이스)"):
                 sweep_res = run_variable_sweep(
                     sweep_variable=sv_key,
@@ -2228,12 +2232,12 @@ if run_button or "results" in st.session_state:
 
             dc1, dc2 = st.columns(2)
             with dc1:
-                st.download_button("📊 스캔 결과 Excel", gen_sweep_excel(),
+                st.download_button("스캔 결과 Excel", gen_sweep_excel(),
                                     "FiPLSim_변수스캐닝.xlsx",
                                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                     use_container_width=True)
             with dc2:
-                st.download_button("📝 스캔 리포트 DOCX", gen_sweep_docx(),
+                st.download_button("스캔 리포트 DOCX", gen_sweep_docx(),
                                     "FiPLSim_변수스캐닝_리포트.docx",
                                     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                                     use_container_width=True)
@@ -2246,7 +2250,7 @@ else:
 
     1. **배관망 구성**: 가지배관 개수(n), 헤드 수(m), 간격을 설정합니다.
     2. **운전 조건**: 입구 압력, 설계 유량을 조정합니다.
-    3. **🚀 시뮬레이션 실행** 버튼을 클릭하면 동적 배관망이 자동 생성되고 분석됩니다.
+    3. **시뮬레이션 실행** 버튼을 클릭하면 동적 배관망이 자동 생성되고 분석됩니다.
 
     ---
     """)
