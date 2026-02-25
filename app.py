@@ -60,6 +60,52 @@ def tooltip(term: str, explanation: str) -> str:
 
 
 # ══════════════════════════════════════════════
+#  다크/라이트 모드 토글
+# ══════════════════════════════════════════════
+if "theme_mode" not in st.session_state:
+    st.session_state["theme_mode"] = "dark"
+
+_theme_col1, _theme_col2 = st.sidebar.columns(2)
+with _theme_col1:
+    if st.button("🌙 다크", use_container_width=True,
+                 type="primary" if st.session_state["theme_mode"] == "dark" else "secondary"):
+        st.session_state["theme_mode"] = "dark"
+        st.rerun()
+with _theme_col2:
+    if st.button("☀️ 라이트", use_container_width=True,
+                 type="primary" if st.session_state["theme_mode"] == "light" else "secondary"):
+        st.session_state["theme_mode"] = "light"
+        st.rerun()
+
+if st.session_state["theme_mode"] == "light":
+    st.markdown("""<style>
+        [data-testid="stAppViewContainer"], [data-testid="stApp"] {
+            background-color: #FFFFFF; color: #262730;
+        }
+        [data-testid="stSidebar"] {
+            background-color: #F0F2F6; color: #262730;
+        }
+        [data-testid="stSidebar"] * { color: #262730; }
+        [data-testid="stAppViewContainer"] h1,
+        [data-testid="stAppViewContainer"] h2,
+        [data-testid="stAppViewContainer"] h3,
+        [data-testid="stAppViewContainer"] p,
+        [data-testid="stAppViewContainer"] span,
+        [data-testid="stAppViewContainer"] label,
+        [data-testid="stAppViewContainer"] div {
+            color: #262730 !important;
+        }
+        [data-testid="stMetricValue"] { color: #262730 !important; }
+        [data-testid="stMetricDelta"] svg { fill: #262730; }
+        .stTabs [data-baseweb="tab"] { color: #262730; }
+        [data-testid="stDataFrame"] { background-color: #FFFFFF; }
+        .stMarkdown, .stCaption { color: #262730 !important; }
+        header[data-testid="stHeader"] { background-color: #FFFFFF; }
+    </style>""", unsafe_allow_html=True)
+
+st.sidebar.divider()
+
+# ══════════════════════════════════════════════
 #  사이드바 입력
 # ══════════════════════════════════════════════
 
