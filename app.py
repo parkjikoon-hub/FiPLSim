@@ -66,7 +66,13 @@ if os.path.exists(_apple_icon):
         unsafe_allow_html=True,
     )
 
-st.title("🔥 FiPLSim: Advanced Fire Protection Pipe Let Simulator")
+st.markdown(
+    '<h1 style="margin-bottom:0">🔥 Fi<span style="color:#4A9EFF">PLS</span>im: '
+    'Advanced Fire Protection <span style="color:#4A9EFF">P</span>ipe '
+    '<span style="color:#4A9EFF">L</span>et '
+    '<span style="color:#4A9EFF">S</span>imulator</h1>',
+    unsafe_allow_html=True,
+)
 st.caption("동적 배관망 생성 및 몬테카를로 기반 유체역학 해석 엔진 (PLS)")
 
 
