@@ -1,0 +1,22 @@
+### [Pump Performance Database for Simulation]
+
+#### 1. Standard Model A (High-Efficiency Type)
+- **Manufacturer**: Wilo Helix-V
+- **Rated Point**: 1,000 LPM @ 80m Head
+- **Efficiency (BEP)**: 78%
+- **P-Q Curve Points (Q in LPM, H in m)**: 
+  - (0, 115), (500, 105), (1000, 80), (1200, 65), (1500, 48)
+
+#### 2. Standard Model B (General Purpose)
+- **Manufacturer**: ShinShin SSV
+- **Rated Point**: 800 LPM @ 70m Head
+- **Efficiency (BEP)**: 68%
+- **P-Q Curve Points (Q in LPM, H in m)**:
+  - (0, 98), (400, 90), (800, 70), (1000, 55), (1200, 40)
+
+#### 3. Standard Model C (Small Scale)
+- **Manufacturer**: Daeyoung DVM
+- **Rated Point**: 500 LPM @ 60m Head
+- **Efficiency (BEP)**: 62%
+- **P-Q Curve Points (Q in LPM, H in m)**:
+  - (0, 84), (250, 75), (500, 60), (750, 40)
