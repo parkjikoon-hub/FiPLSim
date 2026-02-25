@@ -34,7 +34,7 @@ from pipe_network import (
 from pump import (
     DynamicSystemCurve, load_pump, find_operating_point, calculate_energy_savings,
 )
-from simulation import run_dynamic_monte_carlo, run_dynamic_sensitivity
+from simulation import run_dynamic_monte_carlo, run_dynamic_sensitivity, run_variable_sweep
 
 
 # ──────────────────────────────────────────────
@@ -430,9 +430,9 @@ if run_button or "results" in st.session_state:
                     )
 
     # ── 탭 ──
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "📈 압력 프로파일", "🔄 P-Q 곡선", "🎲 몬테카를로",
-        "📊 민감도 분석", "📥 데이터 추출",
+        "📊 민감도 분석", "📥 데이터 추출", "🔍 변수 스캐닝",
     ])
 
     # ═══ Tab 1: 압력 프로파일 ═══
@@ -1649,9 +1649,100 @@ if run_button or "results" in st.session_state:
                 ))
             add_table_from_data(["순위", "위치", "관경", "말단 압력 (MPa)", "강하량 (kPa)"], sens_rows)
 
-            # ═══ Section 5: NFPC 규정 준수 판정 ═══
+            # ═══ Section 5: 변수 스캐닝 (조건부) ═══
+            sweep_doc = st.session_state.get("sweep_results")
+            if sweep_doc:
+                doc.add_page_break()
+                add_heading_styled("5. 변수 스캐닝 분석 (Variable Sweep)", level=1)
+                sw_var_names = {
+                    "design_flow": "설계 유량 (LPM)",
+                    "inlet_pressure": "입구 압력 (MPa)",
+                    "bead_height": "비드 높이 (mm)",
+                    "heads_per_branch": "가지배관당 헤드 수",
+                }
+                sw_label = sw_var_names.get(sweep_doc["sweep_variable"], sweep_doc["sweep_variable"])
+                sw_vals_doc = sweep_doc["sweep_values"]
+
+                add_heading_styled("5.1 스캔 설정", level=2)
+                add_table_from_data(["항목", "값"], [
+                    ("스캔 변수", sw_label),
+                    ("범위", f"{sw_vals_doc[0]} ~ {sw_vals_doc[-1]}"),
+                    ("총 케이스 수", f"{len(sw_vals_doc)}"),
+                ])
+
+                doc.add_paragraph()
+                add_heading_styled("5.2 임계점 탐지", level=2)
+                ca_str = f"{sweep_doc['critical_A']:.2f}" if sweep_doc["critical_A"] is not None else "해당 없음 (전 구간 PASS)"
+                cb_str = f"{sweep_doc['critical_B']:.2f}" if sweep_doc["critical_B"] is not None else "해당 없음 (전 구간 PASS)"
+                p_ca = doc.add_paragraph()
+                p_ca.add_run(f"Case A 임계점: ").bold = True
+                p_ca.add_run(ca_str)
+                p_cb = doc.add_paragraph()
+                p_cb.add_run(f"Case B 임계점: ").bold = True
+                p_cb.add_run(cb_str)
+
+                # 스캔 그래프
+                if charts_available:
+                    doc.add_paragraph()
+                    add_heading_styled("5.3 변수-수압 응답 곡선", level=2)
+                    fig_sw_doc = go.Figure()
+                    fig_sw_doc.add_trace(go.Scatter(
+                        x=sw_vals_doc, y=sweep_doc["terminal_A"],
+                        name="Case A", mode="lines+markers",
+                        line=dict(color="#EF553B", dash="dash", width=2), marker=dict(size=6),
+                    ))
+                    fig_sw_doc.add_trace(go.Scatter(
+                        x=sw_vals_doc, y=sweep_doc["terminal_B"],
+                        name="Case B", mode="lines+markers",
+                        line=dict(color="#636EFA", width=3), marker=dict(size=6),
+                    ))
+                    fig_sw_doc.add_hline(y=MIN_TERMINAL_PRESSURE_MPA, line_dash="dot",
+                                         line_color="green", line_width=2)
+                    if sweep_doc["critical_A"] is not None:
+                        idx_d = sw_vals_doc.index(sweep_doc["critical_A"])
+                        fig_sw_doc.add_trace(go.Scatter(
+                            x=[sweep_doc["critical_A"]], y=[sweep_doc["terminal_A"][idx_d]],
+                            mode="markers", name="A 임계점",
+                            marker=dict(size=16, color="#EF553B", symbol="diamond"),
+                        ))
+                    if sweep_doc["critical_B"] is not None:
+                        idx_d = sw_vals_doc.index(sweep_doc["critical_B"])
+                        fig_sw_doc.add_trace(go.Scatter(
+                            x=[sweep_doc["critical_B"]], y=[sweep_doc["terminal_B"][idx_d]],
+                            mode="markers", name="B 임계점",
+                            marker=dict(size=16, color="#636EFA", symbol="diamond"),
+                        ))
+                    fig_sw_doc.update_layout(
+                        xaxis_title=sw_label, yaxis_title="최악 말단 수압 (MPa)",
+                        template="plotly_white", height=500,
+                        font=dict(family="Arial", size=13),
+                    )
+                    add_chart(fig_sw_doc, f"{sw_label} 변화에 따른 말단 수압 응답", fw=1200, fh=500)
+
+                # 전체 데이터 테이블
+                doc.add_paragraph()
+                add_heading_styled("5.4 스캔 결과 데이터", level=2)
+                sw_data_rows = []
+                for i in range(len(sw_vals_doc)):
+                    sw_data_rows.append((
+                        f"{sw_vals_doc[i]:.2f}" if sweep_doc["sweep_variable"] != "heads_per_branch" else f"{int(sw_vals_doc[i])}",
+                        f"{sweep_doc['terminal_A'][i]:.4f}",
+                        f"{sweep_doc['terminal_B'][i]:.4f}",
+                        f"{sweep_doc['improvement_pct'][i]:.1f}",
+                        "PASS" if sweep_doc["pass_fail_A"][i] else "FAIL",
+                        "PASS" if sweep_doc["pass_fail_B"][i] else "FAIL",
+                    ))
+                add_table_from_data(
+                    [sw_label, "A 수압(MPa)", "B 수압(MPa)", "개선율(%)", "A 판정", "B 판정"],
+                    sw_data_rows,
+                )
+                nfpc_section_num = "6"
+            else:
+                nfpc_section_num = "5"
+
+            # ═══ NFPC 규정 준수 판정 ═══
             doc.add_page_break()
-            add_heading_styled("5. NFPC 규정 준수 판정 (Code Compliance)", level=1)
+            add_heading_styled(f"{nfpc_section_num}. NFPC 규정 준수 판정 (Code Compliance)", level=1)
 
             def pf(cond):
                 return "PASS" if cond else "FAIL"
@@ -1752,6 +1843,266 @@ if run_button or "results" in st.session_state:
                                 "FiPLSim_분석_리포트.docx",
                                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                                 use_container_width=True)
+
+    # ═══════════════════════════════════════════
+    #  Tab 6: 변수 스캐닝 (Variable Sweep)
+    # ═══════════════════════════════════════════
+    with tab6:
+        st.header("🔍 연속 변수 스캐닝 (Variable Sweep)")
+        st.caption("특정 설계 변수를 연속 변화시키며 시스템 임계점(PASS→FAIL)을 자동 탐지합니다.")
+
+        # ── 입력 인터페이스 ──
+        sweep_options = {
+            "설계 유량 (LPM)": ("design_flow", 100.0, 3000.0, 100.0),
+            "입구 압력 (MPa)": ("inlet_pressure", 0.1, 2.0, 0.05),
+            "비드 높이 (mm)": ("bead_height", 0.1, 5.0, 0.1),
+            "가지배관당 헤드 수": ("heads_per_branch", 1.0, 50.0, 1.0),
+        }
+        col_a, col_b = st.columns([1, 2])
+        with col_a:
+            sweep_label = st.selectbox("스캔 대상 변수", list(sweep_options.keys()))
+        sv_key, sv_start, sv_end, sv_step = sweep_options[sweep_label]
+
+        with col_b:
+            sc1, sc2, sc3 = st.columns(3)
+            sw_start = sc1.number_input("시작값", value=sv_start, step=sv_step, format="%.2f" if sv_key != "heads_per_branch" else "%.0f")
+            sw_end = sc2.number_input("종료값", value=sv_end, step=sv_step, format="%.2f" if sv_key != "heads_per_branch" else "%.0f")
+            sw_step = sc3.number_input("증감 간격", value=sv_step, min_value=sv_step, step=sv_step, format="%.2f" if sv_key != "heads_per_branch" else "%.0f")
+
+        n_steps = int((sw_end - sw_start) / sw_step) + 1 if sw_step > 0 else 0
+        st.info(f"총 **{n_steps}개** 시뮬레이션 수행 예정 (현재 설정 기준)")
+
+        if st.button("🔍 스캔 시작", use_container_width=True):
+            with st.spinner(f"변수 스캐닝 중... ({n_steps}개 케이스)"):
+                sweep_res = run_variable_sweep(
+                    sweep_variable=sv_key,
+                    start_val=sw_start, end_val=sw_end, step_val=sw_step,
+                    num_branches=num_branches,
+                    heads_per_branch=heads_per_branch,
+                    branch_spacing_m=branch_spacing,
+                    head_spacing_m=head_spacing,
+                    inlet_pressure_mpa=inlet_pressure,
+                    total_flow_lpm=float(design_flow),
+                    bead_height_mm=bead_height,
+                    beads_per_branch=beads_per_branch,
+                    topology=topology_key,
+                    relaxation=hc_relaxation,
+                )
+            st.session_state["sweep_results"] = sweep_res
+            st.success(f"스캔 완료! {len(sweep_res['sweep_values'])}개 케이스 분석됨")
+
+        # ── 결과 표시 ──
+        if "sweep_results" in st.session_state:
+            sw = st.session_state["sweep_results"]
+            sv_vals = sw["sweep_values"]
+            t_A = sw["terminal_A"]
+            t_B = sw["terminal_B"]
+
+            # 임계점 KPI
+            st.markdown("#### 임계점 탐지 결과 (Critical Point Detection)")
+            kc1, kc2 = st.columns(2)
+            crit_A_str = f"{sw['critical_A']:.2f}" if sw["critical_A"] is not None else "해당 없음 (전 구간 PASS)"
+            crit_B_str = f"{sw['critical_B']:.2f}" if sw["critical_B"] is not None else "해당 없음 (전 구간 PASS)"
+            kc1.metric(f"Case A 임계점 ({sweep_label})", crit_A_str)
+            kc2.metric(f"Case B 임계점 ({sweep_label})", crit_B_str)
+
+            # 스캔 그래프
+            st.markdown("#### 변수-수압 응답 곡선")
+            fig_sw = go.Figure()
+            fig_sw.add_trace(go.Scatter(
+                x=sv_vals, y=t_A,
+                name=f"Case A (비드 {bead_height}mm)",
+                mode="lines+markers",
+                line=dict(color="#EF553B", dash="dash", width=2), marker=dict(size=6),
+            ))
+            fig_sw.add_trace(go.Scatter(
+                x=sv_vals, y=t_B,
+                name="Case B (비드 0mm, 신기술)",
+                mode="lines+markers",
+                line=dict(color="#636EFA", width=3), marker=dict(size=6),
+            ))
+            fig_sw.add_hline(y=MIN_TERMINAL_PRESSURE_MPA, line_dash="dot",
+                             line_color="green", line_width=2,
+                             annotation_text=f"최소 기준 {MIN_TERMINAL_PRESSURE_MPA} MPa")
+            # 임계점 마커
+            if sw["critical_A"] is not None:
+                idx_ca = sv_vals.index(sw["critical_A"])
+                fig_sw.add_trace(go.Scatter(
+                    x=[sw["critical_A"]], y=[t_A[idx_ca]],
+                    mode="markers", name=f"A 임계점 ({sw['critical_A']:.2f})",
+                    marker=dict(size=16, color="#EF553B", symbol="diamond"),
+                    showlegend=True,
+                ))
+            if sw["critical_B"] is not None:
+                idx_cb = sv_vals.index(sw["critical_B"])
+                fig_sw.add_trace(go.Scatter(
+                    x=[sw["critical_B"]], y=[t_B[idx_cb]],
+                    mode="markers", name=f"B 임계점 ({sw['critical_B']:.2f})",
+                    marker=dict(size=16, color="#636EFA", symbol="diamond"),
+                    showlegend=True,
+                ))
+            fig_sw.update_layout(
+                xaxis_title=sweep_label, yaxis_title="최악 말단 수압 (MPa)",
+                template="plotly_white", height=500,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                font=dict(family="Arial", size=13),
+            )
+            st.plotly_chart(fig_sw, use_container_width=True)
+
+            # PASS/FAIL 데이터 테이블
+            st.markdown("#### 스캔 결과 상세 테이블")
+            df_sw = pd.DataFrame({
+                sweep_label: sv_vals,
+                "Case A 수압 (MPa)": [f"{v:.4f}" for v in t_A],
+                "Case B 수압 (MPa)": [f"{v:.4f}" for v in t_B],
+                "개선율 (%)": [f"{v:.1f}" for v in sw["improvement_pct"]],
+                "Case A": ["PASS" if p else "FAIL" for p in sw["pass_fail_A"]],
+                "Case B": ["PASS" if p else "FAIL" for p in sw["pass_fail_B"]],
+            })
+            st.dataframe(df_sw, use_container_width=True, height=400)
+
+            # Excel 다운로드
+            def gen_sweep_excel():
+                df_exp = pd.DataFrame({
+                    sweep_label: sv_vals,
+                    "Case A 수압 (MPa)": t_A,
+                    "Case B 수압 (MPa)": t_B,
+                    "개선율 (%)": sw["improvement_pct"],
+                    "Case A 판정": ["PASS" if p else "FAIL" for p in sw["pass_fail_A"]],
+                    "Case B 판정": ["PASS" if p else "FAIL" for p in sw["pass_fail_B"]],
+                })
+                buf = io.BytesIO()
+                with pd.ExcelWriter(buf, engine="openpyxl") as w:
+                    df_exp.to_excel(w, sheet_name="Variable Sweep", index=False)
+                return buf.getvalue()
+
+            # DOCX 다운로드
+            def gen_sweep_docx():
+                from datetime import datetime
+                from docx import Document
+                from docx.shared import Pt, Inches, RGBColor
+                from docx.enum.text import WD_ALIGN_PARAGRAPH
+                from docx.enum.table import WD_TABLE_ALIGNMENT
+
+                doc = Document()
+                style = doc.styles["Normal"]
+                style.font.name = "맑은 고딕"
+                style.font.size = Pt(10)
+                navy = RGBColor(0x1A, 0x3C, 0x6E)
+                now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+                def heading_s(text, lv=1):
+                    h = doc.add_heading(text, level=lv)
+                    for r in h.runs:
+                        r.font.color.rgb = navy
+                    return h
+
+                def tbl(headers, rows):
+                    t = doc.add_table(rows=1+len(rows), cols=len(headers))
+                    t.style = "Light Grid Accent 1"
+                    t.alignment = WD_TABLE_ALIGNMENT.CENTER
+                    for i, hd in enumerate(headers):
+                        c = t.rows[0].cells[i]; c.text = hd
+                        for p in c.paragraphs:
+                            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                            for r in p.runs: r.bold = True; r.font.size = Pt(9)
+                    for ri, row in enumerate(rows):
+                        for ci, val in enumerate(row):
+                            c = t.rows[ri+1].cells[ci]; c.text = str(val)
+                            for p in c.paragraphs:
+                                for r in p.runs: r.font.size = Pt(9)
+                    return t
+
+                # 표지
+                title = doc.add_heading("FiPLSim Variable Sweep Report", level=0)
+                title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                for r in title.runs: r.font.color.rgb = navy
+                meta = doc.add_paragraph(f"생성 일시: {now_str}  |  FiPLSim: Advanced Fire Protection Pipe Let Simulator")
+                meta.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                meta.runs[0].font.size = Pt(8)
+                meta.runs[0].font.color.rgb = RGBColor(0x99,0x99,0x99)
+                doc.add_paragraph()
+
+                # 1. 스캔 설정
+                heading_s("1. 스캔 설정 (Sweep Configuration)")
+                tbl(["항목", "값"], [
+                    ("스캔 변수", sweep_label),
+                    ("시작값", f"{sw_start}"),
+                    ("종료값", f"{sw_end}"),
+                    ("증감 간격", f"{sw_step}"),
+                    ("총 케이스 수", f"{len(sv_vals)}"),
+                ])
+
+                # 2. 임계점
+                doc.add_paragraph()
+                heading_s("2. 임계점 탐지 (Critical Point)")
+                doc.add_paragraph(
+                    f"Case A 임계점: {crit_A_str}  |  Case B 임계점: {crit_B_str}"
+                )
+
+                # 3. 스캔 그래프
+                try:
+                    png = fig_sw.to_image(format="png", width=1200, height=600, scale=2, engine="kaleido")
+                    doc.add_paragraph()
+                    heading_s("3. 변수-수압 응답 곡선")
+                    doc.add_picture(io.BytesIO(png), width=Inches(6.0))
+                    doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    cap = doc.add_paragraph()
+                    cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    rc = cap.add_run(f"그림 1. {sweep_label} 변화에 따른 말단 수압 응답")
+                    rc.font.size = Pt(9); rc.font.color.rgb = RGBColor(0x66,0x66,0x66); rc.italic = True
+                except Exception:
+                    pass
+
+                # 4. 전체 데이터 테이블
+                doc.add_page_break()
+                heading_s("4. 스캔 결과 데이터 (Full Data)")
+                data_rows = []
+                for i in range(len(sv_vals)):
+                    data_rows.append((
+                        f"{sv_vals[i]:.2f}" if sv_key != "heads_per_branch" else f"{int(sv_vals[i])}",
+                        f"{t_A[i]:.4f}", f"{t_B[i]:.4f}",
+                        f"{sw['improvement_pct'][i]:.1f}",
+                        "PASS" if sw["pass_fail_A"][i] else "FAIL",
+                        "PASS" if sw["pass_fail_B"][i] else "FAIL",
+                    ))
+                t_data = tbl([sweep_label, "A 수압(MPa)", "B 수압(MPa)", "개선율(%)", "A 판정", "B 판정"], data_rows)
+
+                # PASS/FAIL 셀 색상
+                g = RGBColor(0x27,0xAE,0x60)
+                rd = RGBColor(0xC0,0x39,0x2B)
+                for ri in range(1, len(t_data.rows)):
+                    for ci in [4, 5]:
+                        cell = t_data.rows[ri].cells[ci]
+                        txt = cell.text.strip()
+                        for p in cell.paragraphs:
+                            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                            for rn in p.runs:
+                                rn.bold = True
+                                rn.font.color.rgb = g if txt == "PASS" else rd
+
+                # 푸터
+                doc.add_paragraph()
+                ft = doc.add_paragraph()
+                ft.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                rf = ft.add_run(f"FiPLSim Variable Sweep Report | {now_str}")
+                rf.font.size = Pt(8); rf.font.color.rgb = RGBColor(0x99,0x99,0x99)
+
+                buf = io.BytesIO()
+                doc.save(buf)
+                return buf.getvalue()
+
+            dc1, dc2 = st.columns(2)
+            with dc1:
+                st.download_button("📊 스캔 결과 Excel", gen_sweep_excel(),
+                                    "FiPLSim_변수스캐닝.xlsx",
+                                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                    use_container_width=True)
+            with dc2:
+                st.download_button("📝 스캔 리포트 DOCX", gen_sweep_docx(),
+                                    "FiPLSim_변수스캐닝_리포트.docx",
+                                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                    use_container_width=True)
 
 else:
     # ── 초기 안내 화면 ──

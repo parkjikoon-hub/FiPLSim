@@ -17,6 +17,7 @@ from constants import (
 from pipe_network import (
     generate_dynamic_system, calculate_dynamic_system,
     build_default_network, calculate_pressure_profile,
+    compare_dynamic_cases_with_topology,
 )
 
 
@@ -254,6 +255,103 @@ def run_dynamic_sensitivity(
         "pipe_sizes": pipe_sizes,
         "bead_height_mm": bead_height_mm,
         "heads_per_branch": heads_per_branch,
+    }
+
+
+# ══════════════════════════════════════════════
+#  연속 변수 스캐닝 (Variable Sweep)
+# ══════════════════════════════════════════════
+
+def run_variable_sweep(
+    sweep_variable: str,
+    start_val: float,
+    end_val: float,
+    step_val: float,
+    num_branches: int = DEFAULT_NUM_BRANCHES,
+    heads_per_branch: int = DEFAULT_HEADS_PER_BRANCH,
+    branch_spacing_m: float = DEFAULT_BRANCH_SPACING_M,
+    head_spacing_m: float = DEFAULT_HEAD_SPACING_M,
+    inlet_pressure_mpa: float = DEFAULT_INLET_PRESSURE_MPA,
+    total_flow_lpm: float = DEFAULT_TOTAL_FLOW_LPM,
+    bead_height_mm: float = 1.5,
+    beads_per_branch: int = DEFAULT_BEADS_PER_BRANCH,
+    topology: str = "tree",
+    relaxation: float = 0.5,
+) -> dict:
+    """
+    특정 설계 변수를 연속 변화시키며 Case A/B 말단 수압 변화 및 임계점을 탐지.
+
+    sweep_variable: "design_flow" | "inlet_pressure" | "bead_height" | "heads_per_branch"
+    """
+    sweep_values = np.arange(start_val, end_val + step_val / 2, step_val).tolist()
+    if not sweep_values:
+        sweep_values = [start_val]
+
+    terminal_A = []
+    terminal_B = []
+    improvement_pct = []
+    pass_fail_A = []
+    pass_fail_B = []
+
+    for val in sweep_values:
+        kw = dict(
+            topology=topology,
+            num_branches=num_branches,
+            heads_per_branch=heads_per_branch,
+            branch_spacing_m=branch_spacing_m,
+            head_spacing_m=head_spacing_m,
+            inlet_pressure_mpa=inlet_pressure_mpa,
+            total_flow_lpm=total_flow_lpm,
+            bead_height_existing=bead_height_mm,
+            bead_height_new=0.0,
+            beads_per_branch=beads_per_branch,
+            relaxation=relaxation,
+        )
+
+        if sweep_variable == "design_flow":
+            kw["total_flow_lpm"] = float(val)
+        elif sweep_variable == "inlet_pressure":
+            kw["inlet_pressure_mpa"] = float(val)
+        elif sweep_variable == "bead_height":
+            kw["bead_height_existing"] = float(val)
+        elif sweep_variable == "heads_per_branch":
+            kw["heads_per_branch"] = int(val)
+
+        try:
+            res = compare_dynamic_cases_with_topology(**kw)
+            t_a = res["terminal_A_mpa"]
+            t_b = res["terminal_B_mpa"]
+            imp = res["improvement_pct"]
+        except Exception:
+            t_a = 0.0
+            t_b = 0.0
+            imp = 0.0
+
+        terminal_A.append(t_a)
+        terminal_B.append(t_b)
+        improvement_pct.append(imp)
+        pass_fail_A.append(t_a >= MIN_TERMINAL_PRESSURE_MPA)
+        pass_fail_B.append(t_b >= MIN_TERMINAL_PRESSURE_MPA)
+
+    # 임계점 탐지: PASS → FAIL 최초 전환 값
+    critical_A = None
+    critical_B = None
+    for i in range(len(sweep_values)):
+        if critical_A is None and not pass_fail_A[i]:
+            critical_A = sweep_values[i]
+        if critical_B is None and not pass_fail_B[i]:
+            critical_B = sweep_values[i]
+
+    return {
+        "sweep_variable": sweep_variable,
+        "sweep_values": sweep_values,
+        "terminal_A": terminal_A,
+        "terminal_B": terminal_B,
+        "improvement_pct": improvement_pct,
+        "pass_fail_A": pass_fail_A,
+        "pass_fail_B": pass_fail_B,
+        "critical_A": critical_A,
+        "critical_B": critical_B,
     }
 
 
