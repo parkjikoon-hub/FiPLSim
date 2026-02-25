@@ -41,13 +41,13 @@ from simulation import run_dynamic_monte_carlo, run_dynamic_sensitivity
 # ? 페이지 설정
 # ──────────────────────────────────────────────
 st.set_page_config(
-    page_title="FiPSim",
+    page_title="FiPLSim",
     page_icon="🔥",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-st.title("🔥 FiPSim: Advanced Fire Protection Piping Simulator")
+st.title("🔥 FiPLSim: Advanced Fire Protection Pipe Let Simulator")
 st.caption("동적 배관망 생성 및 몬테카를로 기반 유체역학 해석 엔진 (PLS)")
 
 
@@ -1008,7 +1008,7 @@ if run_button or "results" in st.session_state:
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<title>FiPSim 시뮬레이션 분석 리포트</title>
+<title>FiPLSim 시뮬레이션 분석 리포트</title>
 <style>
     @media print {{ @page {{ margin: 20mm; }} }}
     * {{ box-sizing: border-box; }}
@@ -1037,9 +1037,9 @@ if run_button or "results" in st.session_state:
 </head>
 <body>
 
-<h1>FiPSim Simulation Analysis Report</h1>
+<h1>FiPLSim Simulation Analysis Report</h1>
 <p class="subtitle">소화배관 시뮬레이션 상세 분석 리포트 — 동적 배관망 유체역학 해석</p>
-<p class="meta">생성 일시: {now_str} | FiPSim: Advanced Fire Protection Piping Simulator</p>
+<p class="meta">생성 일시: {now_str} | FiPLSim: Advanced Fire Protection Pipe Let Simulator</p>
 
 <!-- ═══ Section 1: 시뮬레이션 개요 ═══ -->
 <h2>1. 시뮬레이션 개요 (Simulation Overview)</h2>
@@ -1135,7 +1135,7 @@ if run_button or "results" in st.session_state:
 {violation_table if violation_rows else ''}
 
 <div class="footer">
-    <p>본 리포트는 <strong>FiPSim (Fire Protection Piping System Simulator)</strong>에 의해 자동 생성되었습니다.</p>
+    <p>본 리포트는 <strong>FiPLSim (Fire Protection Pipe Let Simulator)</strong>에 의해 자동 생성되었습니다.</p>
     <p>동적 배관망 생성 및 몬테카를로 기반 유체역학 해석 엔진 (PLS) | {now_str}</p>
 </div>
 
@@ -1214,7 +1214,7 @@ if run_button or "results" in st.session_state:
             comp_B = check_nfpc_compliance(case_results["system_B"])
 
             # ═══ 표지 ═══
-            title = doc.add_heading("FiPSim Simulation Analysis Report", level=0)
+            title = doc.add_heading("FiPLSim Simulation Analysis Report", level=0)
             title.alignment = WD_ALIGN_PARAGRAPH.CENTER
             for run in title.runs:
                 run.font.color.rgb = navy
@@ -1224,7 +1224,7 @@ if run_button or "results" in st.session_state:
             sub.runs[0].font.size = Pt(12)
             sub.runs[0].font.color.rgb = RGBColor(0x66, 0x66, 0x66)
 
-            meta = doc.add_paragraph(f"생성 일시: {now_str}  |  FiPSim: Advanced Fire Protection Piping Simulator")
+            meta = doc.add_paragraph(f"생성 일시: {now_str}  |  FiPLSim: Advanced Fire Protection Pipe Let Simulator")
             meta.alignment = WD_ALIGN_PARAGRAPH.CENTER
             meta.runs[0].font.size = Pt(8)
             meta.runs[0].font.color.rgb = RGBColor(0x99, 0x99, 0x99)
@@ -1409,7 +1409,7 @@ if run_button or "results" in st.session_state:
             footer = doc.add_paragraph()
             footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
             run_f = footer.add_run(
-                "본 리포트는 FiPSim (Fire Protection Piping System Simulator)에 의해 자동 생성되었습니다.\n"
+                "본 리포트는 FiPLSim (Fire Protection Pipe Let Simulator)에 의해 자동 생성되었습니다.\n"
                 f"동적 배관망 생성 및 몬테카를로 기반 유체역학 해석 엔진 (PLS) | {now_str}"
             )
             run_f.font.size = Pt(8)
@@ -1422,7 +1422,7 @@ if run_button or "results" in st.session_state:
         c1, c2 = st.columns(2)
         with c1:
             st.download_button("📊 Excel 다운로드", gen_excel(),
-                                "FiPSim_시뮬레이션_결과.xlsx",
+                                "FiPLSim_시뮬레이션_결과.xlsx",
                                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                 use_container_width=True)
         with c2:
@@ -1432,16 +1432,16 @@ if run_button or "results" in st.session_state:
                 "Case B (MPa)": case_results["case_B"]["pressures_mpa"],
             }).to_csv(index=False).encode("utf-8-sig")
             st.download_button("📄 CSV 다운로드", csv,
-                                "FiPSim_압력_프로파일.csv", "text/csv",
+                                "FiPLSim_압력_프로파일.csv", "text/csv",
                                 use_container_width=True)
         c3, c4 = st.columns(2)
         with c3:
             st.download_button("📑 분석 리포트 (HTML)", gen_report_html(),
-                                "FiPSim_분석_리포트.html", "text/html",
+                                "FiPLSim_분석_리포트.html", "text/html",
                                 use_container_width=True)
         with c4:
             st.download_button("📝 분석 리포트 (DOCX)", gen_report_docx(),
-                                "FiPSim_분석_리포트.docx",
+                                "FiPLSim_분석_리포트.docx",
                                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                                 use_container_width=True)
 
