@@ -941,25 +941,52 @@ if run_button or "results" in st.session_state:
                 pd.DataFrame(worst_A["segment_details"]).to_excel(w, sheet_name="Case A 상세", index=False)
                 pd.DataFrame(worst_B["segment_details"]).to_excel(w, sheet_name="Case B 상세", index=False)
 
-                # Sheet 5: 몬테카를로 + 통계 요약
+                # Sheet 5: 몬테카를로 + 누적 통계
                 tp = mc_results["terminal_pressures"]
+                tp_arr = np.array(tp)
+                n_mc = mc_results["n_iterations"]
+                # 누적 통계 계산
+                cum_mean = np.cumsum(tp_arr) / np.arange(1, n_mc + 1)
+                cum_std = np.array([float(np.std(tp_arr[:i+1], ddof=1)) if i > 0 else 0.0 for i in range(n_mc)])
+                cum_min = np.minimum.accumulate(tp_arr)
+                cum_max = np.maximum.accumulate(tp_arr)
+                cum_pf = np.cumsum(tp_arr < MIN_TERMINAL_PRESSURE_MPA) / np.arange(1, n_mc + 1) * 100.0
+
                 mc_rows = []
-                for idx_mc in range(mc_results["n_iterations"]):
+                for idx_mc in range(n_mc):
                     mc_rows.append({
                         "Trial": idx_mc + 1,
-                        "Worst Terminal (MPa)": tp[idx_mc],
+                        "Worst Terminal (MPa)": round(float(tp[idx_mc]), 6),
                         "Defect Positions": str(mc_results["defect_configs"][idx_mc]),
+                        "누적 평균 (μ, MPa)": round(float(cum_mean[idx_mc]), 6),
+                        "누적 표준편차 (σ, MPa)": round(float(cum_std[idx_mc]), 6),
+                        "누적 최솟값 (Min, MPa)": round(float(cum_min[idx_mc]), 6),
+                        "누적 최댓값 (Max, MPa)": round(float(cum_max[idx_mc]), 6),
+                        "규정 미달 확률 (Pf, %)": round(float(cum_pf[idx_mc]), 2),
                     })
-                # 통계 요약 행 추가
-                tp_arr = np.array(tp)
-                mc_rows.append({"Trial": "", "Worst Terminal (MPa)": "", "Defect Positions": ""})
-                mc_rows.append({"Trial": "통계 항목", "Worst Terminal (MPa)": "값 (MPa)", "Defect Positions": ""})
-                mc_rows.append({"Trial": "평균 (Mean)", "Worst Terminal (MPa)": round(float(np.mean(tp_arr)), 6), "Defect Positions": ""})
-                mc_rows.append({"Trial": "표준편차 (Std Dev)", "Worst Terminal (MPa)": round(float(np.std(tp_arr, ddof=1)) if len(tp_arr) > 1 else 0.0, 6), "Defect Positions": ""})
-                mc_rows.append({"Trial": "분산 (Variance)", "Worst Terminal (MPa)": round(float(np.var(tp_arr, ddof=1)) if len(tp_arr) > 1 else 0.0, 8), "Defect Positions": ""})
-                mc_rows.append({"Trial": "최솟값 (Min)", "Worst Terminal (MPa)": round(float(np.min(tp_arr)), 6), "Defect Positions": ""})
-                mc_rows.append({"Trial": "최댓값 (Max)", "Worst Terminal (MPa)": round(float(np.max(tp_arr)), 6), "Defect Positions": ""})
-                mc_rows.append({"Trial": "시행 횟수 (N)", "Worst Terminal (MPa)": len(tp_arr), "Defect Positions": ""})
+                # 최종 통계 요약 행
+                mc_rows.append({k: "" for k in mc_rows[0]})
+                mc_rows.append({"Trial": "최종 통계 요약", "Worst Terminal (MPa)": "", "Defect Positions": "",
+                                "누적 평균 (μ, MPa)": "", "누적 표준편차 (σ, MPa)": "",
+                                "누적 최솟값 (Min, MPa)": "", "누적 최댓값 (Max, MPa)": "", "규정 미달 확률 (Pf, %)": ""})
+                mc_rows.append({"Trial": "평균 (Mean)", "Worst Terminal (MPa)": round(float(np.mean(tp_arr)), 6), "Defect Positions": "",
+                                "누적 평균 (μ, MPa)": "", "누적 표준편차 (σ, MPa)": "",
+                                "누적 최솟값 (Min, MPa)": "", "누적 최댓값 (Max, MPa)": "", "규정 미달 확률 (Pf, %)": ""})
+                mc_rows.append({"Trial": "표준편차 (Std)", "Worst Terminal (MPa)": round(float(np.std(tp_arr, ddof=1)) if n_mc > 1 else 0.0, 6), "Defect Positions": "",
+                                "누적 평균 (μ, MPa)": "", "누적 표준편차 (σ, MPa)": "",
+                                "누적 최솟값 (Min, MPa)": "", "누적 최댓값 (Max, MPa)": "", "규정 미달 확률 (Pf, %)": ""})
+                mc_rows.append({"Trial": "최솟값 (Min)", "Worst Terminal (MPa)": round(float(np.min(tp_arr)), 6), "Defect Positions": "",
+                                "누적 평균 (μ, MPa)": "", "누적 표준편차 (σ, MPa)": "",
+                                "누적 최솟값 (Min, MPa)": "", "누적 최댓값 (Max, MPa)": "", "규정 미달 확률 (Pf, %)": ""})
+                mc_rows.append({"Trial": "최댓값 (Max)", "Worst Terminal (MPa)": round(float(np.max(tp_arr)), 6), "Defect Positions": "",
+                                "누적 평균 (μ, MPa)": "", "누적 표준편차 (σ, MPa)": "",
+                                "누적 최솟값 (Min, MPa)": "", "누적 최댓값 (Max, MPa)": "", "규정 미달 확률 (Pf, %)": ""})
+                mc_rows.append({"Trial": "규정 미달 확률", "Worst Terminal (MPa)": f"{float(cum_pf[-1]):.2f}%", "Defect Positions": "",
+                                "누적 평균 (μ, MPa)": "", "누적 표준편차 (σ, MPa)": "",
+                                "누적 최솟값 (Min, MPa)": "", "누적 최댓값 (Max, MPa)": "", "규정 미달 확률 (Pf, %)": ""})
+                mc_rows.append({"Trial": "시행 횟수 (N)", "Worst Terminal (MPa)": n_mc, "Defect Positions": "",
+                                "누적 평균 (μ, MPa)": "", "누적 표준편차 (σ, MPa)": "",
+                                "누적 최솟값 (Min, MPa)": "", "누적 최댓값 (Max, MPa)": "", "규정 미달 확률 (Pf, %)": ""})
                 pd.DataFrame(mc_rows).to_excel(w, sheet_name="몬테카를로", index=False)
 
                 # Sheet 6: 민감도
@@ -1995,20 +2022,27 @@ if run_button or "results" in st.session_state:
             "입구 압력 (MPa)": ("inlet_pressure", 0.1, 2.0, 0.05),
             "비드 높이 (mm)": ("bead_height", 0.1, 5.0, 0.1),
             "가지배관당 헤드 수": ("heads_per_branch", 1.0, 50.0, 1.0),
+            "몬테카를로 반복 횟수": ("mc_iterations", 10.0, 500.0, 10.0),
         }
+        _int_format_keys = {"heads_per_branch", "mc_iterations"}
         col_a, col_b = st.columns([1, 2])
         with col_a:
             sweep_label = st.selectbox("스캔 대상 변수", list(sweep_options.keys()))
         sv_key, sv_start, sv_end, sv_step = sweep_options[sweep_label]
+        _is_int_var = sv_key in _int_format_keys
+        _fmt = "%.0f" if _is_int_var else "%.2f"
 
         with col_b:
             sc1, sc2, sc3 = st.columns(3)
-            sw_start = sc1.number_input("시작값", value=sv_start, step=sv_step, format="%.2f" if sv_key != "heads_per_branch" else "%.0f")
-            sw_end = sc2.number_input("종료값", value=sv_end, step=sv_step, format="%.2f" if sv_key != "heads_per_branch" else "%.0f")
-            sw_step = sc3.number_input("증감 간격", value=sv_step, min_value=sv_step, step=sv_step, format="%.2f" if sv_key != "heads_per_branch" else "%.0f")
+            sw_start = sc1.number_input("시작값", value=sv_start, step=sv_step, format=_fmt)
+            sw_end = sc2.number_input("종료값", value=sv_end, step=sv_step, format=_fmt)
+            sw_step = sc3.number_input("증감 간격", value=sv_step, min_value=sv_step, step=sv_step, format=_fmt)
 
         n_steps = int((sw_end - sw_start) / sw_step) + 1 if sw_step > 0 else 0
-        st.info(f"총 **{n_steps}개** 시뮬레이션 수행 예정 (현재 설정 기준)")
+        if sv_key == "mc_iterations":
+            st.info(f"총 **{n_steps}개** 반복 횟수 조건으로 몬테카를로 시뮬레이션 수행 예정")
+        else:
+            st.info(f"총 **{n_steps}개** 시뮬레이션 수행 예정 (현재 설정 기준)")
 
         if st.button(":material/search: 스캔 시작", use_container_width=True):
             with st.spinner(f"변수 스캐닝 중... ({n_steps}개 케이스)"):
@@ -2033,86 +2067,187 @@ if run_button or "results" in st.session_state:
         if "sweep_results" in st.session_state:
             sw = st.session_state["sweep_results"]
             sv_vals = sw["sweep_values"]
-            t_A = sw["terminal_A"]
-            t_B = sw["terminal_B"]
+            _is_mc_sweep = sw["sweep_variable"] == "mc_iterations"
 
-            # 임계점 KPI
-            st.markdown("#### 임계점 탐지 결과 (Critical Point Detection)")
-            kc1, kc2 = st.columns(2)
-            crit_A_str = f"{sw['critical_A']:.2f}" if sw["critical_A"] is not None else "해당 없음 (전 구간 PASS)"
-            crit_B_str = f"{sw['critical_B']:.2f}" if sw["critical_B"] is not None else "해당 없음 (전 구간 PASS)"
-            kc1.metric(f"Case A 임계점 ({sweep_label})", crit_A_str)
-            kc2.metric(f"Case B 임계점 ({sweep_label})", crit_B_str)
+            # ────── 몬테카를로 반복 횟수 스캔 전용 결과 ──────
+            if _is_mc_sweep:
+                mc_mean = sw["mc_mean"]
+                mc_std = sw["mc_std"]
+                mc_min = sw["mc_min"]
+                mc_max = sw["mc_max"]
+                mc_pbelow = sw["mc_p_below"]
 
-            # 스캔 그래프
-            st.markdown("#### 변수-수압 응답 곡선")
-            fig_sw = go.Figure()
-            fig_sw.add_trace(go.Scatter(
-                x=sv_vals, y=t_A,
-                name=f"Case A (비드 {bead_height}mm)",
-                mode="lines+markers",
-                line=dict(color="#EF553B", dash="dash", width=2), marker=dict(size=6),
-            ))
-            fig_sw.add_trace(go.Scatter(
-                x=sv_vals, y=t_B,
-                name="Case B (비드 0mm, 신기술)",
-                mode="lines+markers",
-                line=dict(color="#636EFA", width=3), marker=dict(size=6),
-            ))
-            fig_sw.add_hline(y=MIN_TERMINAL_PRESSURE_MPA, line_dash="dot",
-                             line_color="green", line_width=2,
-                             annotation_text=f"최소 기준 {MIN_TERMINAL_PRESSURE_MPA} MPa")
-            # 임계점 마커
-            if sw["critical_A"] is not None:
-                idx_ca = sv_vals.index(sw["critical_A"])
-                fig_sw.add_trace(go.Scatter(
-                    x=[sw["critical_A"]], y=[t_A[idx_ca]],
-                    mode="markers", name=f"A 임계점 ({sw['critical_A']:.2f})",
-                    marker=dict(size=16, color="#EF553B", symbol="diamond"),
-                    showlegend=True,
+                # KPI 카드
+                st.markdown("#### MC 수렴성 분석 결과")
+                _mc_k1, _mc_k2, _mc_k3 = st.columns(3)
+                _mc_k1.metric("최종 평균 수압", f"{mc_mean[-1]:.4f} MPa")
+                _mc_k2.metric("최종 표준편차", f"{mc_std[-1]:.6f} MPa")
+                _mc_k3.metric("기준 미달 확률", f"{mc_pbelow[-1]*100:.1f}%")
+
+                # 그래프 1: 평균 수압 수렴 곡선 + 표준편차 밴드
+                st.markdown("#### 반복 횟수별 평균 수압 수렴 곡선")
+                fig_mc = go.Figure()
+                _upper = [m + s for m, s in zip(mc_mean, mc_std)]
+                _lower = [m - s for m, s in zip(mc_mean, mc_std)]
+                fig_mc.add_trace(go.Scatter(
+                    x=sv_vals, y=_upper, mode="lines", line=dict(width=0),
+                    showlegend=False, hoverinfo="skip",
                 ))
-            if sw["critical_B"] is not None:
-                idx_cb = sv_vals.index(sw["critical_B"])
-                fig_sw.add_trace(go.Scatter(
-                    x=[sw["critical_B"]], y=[t_B[idx_cb]],
-                    mode="markers", name=f"B 임계점 ({sw['critical_B']:.2f})",
-                    marker=dict(size=16, color="#636EFA", symbol="diamond"),
-                    showlegend=True,
+                fig_mc.add_trace(go.Scatter(
+                    x=sv_vals, y=_lower, mode="lines", line=dict(width=0),
+                    fill="tonexty", fillcolor="rgba(99,110,250,0.15)",
+                    name="평균 +/- 1 표준편차", hoverinfo="skip",
                 ))
-            fig_sw.update_layout(
-                xaxis_title=sweep_label, yaxis_title="최악 말단 수압 (MPa)",
-                template="plotly_white", height=500,
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                font=dict(family="Arial", size=13),
-            )
-            st.plotly_chart(fig_sw, use_container_width=True)
+                fig_mc.add_trace(go.Scatter(
+                    x=sv_vals, y=mc_mean, name="평균 말단 수압",
+                    mode="lines+markers",
+                    line=dict(color="#636EFA", width=3), marker=dict(size=6),
+                ))
+                fig_mc.add_trace(go.Scatter(
+                    x=sv_vals, y=mc_min, name="최솟값",
+                    mode="lines", line=dict(color="#EF553B", dash="dot", width=1.5),
+                ))
+                fig_mc.add_trace(go.Scatter(
+                    x=sv_vals, y=mc_max, name="최댓값",
+                    mode="lines", line=dict(color="#00CC96", dash="dot", width=1.5),
+                ))
+                fig_mc.add_hline(y=MIN_TERMINAL_PRESSURE_MPA, line_dash="dash",
+                                 line_color="orange", line_width=2,
+                                 annotation_text=f"최소 기준 {MIN_TERMINAL_PRESSURE_MPA} MPa")
+                fig_mc.update_layout(
+                    xaxis_title="몬테카를로 반복 횟수", yaxis_title="말단 수압 (MPa)",
+                    template="plotly_white", height=500,
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                    font=dict(family="Arial", size=13),
+                )
+                st.plotly_chart(fig_mc, use_container_width=True)
 
-            # PASS/FAIL 데이터 테이블
-            st.markdown("#### 스캔 결과 상세 테이블")
-            df_sw = pd.DataFrame({
-                sweep_label: sv_vals,
-                "Case A 수압 (MPa)": [f"{v:.4f}" for v in t_A],
-                "Case B 수압 (MPa)": [f"{v:.4f}" for v in t_B],
-                "개선율 (%)": [f"{v:.1f}" for v in sw["improvement_pct"]],
-                "Case A": ["PASS" if p else "FAIL" for p in sw["pass_fail_A"]],
-                "Case B": ["PASS" if p else "FAIL" for p in sw["pass_fail_B"]],
-            })
-            st.dataframe(df_sw, use_container_width=True, height=400)
+                # 그래프 2: 기준 미달 확률 변화
+                st.markdown("#### 반복 횟수별 기준 미달 확률 변화")
+                fig_pb = go.Figure()
+                fig_pb.add_trace(go.Scatter(
+                    x=sv_vals, y=[p * 100 for p in mc_pbelow],
+                    name="기준 미달 확률",
+                    mode="lines+markers",
+                    line=dict(color="#EF553B", width=3), marker=dict(size=6),
+                    fill="tozeroy", fillcolor="rgba(239,85,59,0.1)",
+                ))
+                fig_pb.update_layout(
+                    xaxis_title="몬테카를로 반복 횟수", yaxis_title="기준 미달 확률 (%)",
+                    template="plotly_white", height=400,
+                    font=dict(family="Arial", size=13),
+                )
+                st.plotly_chart(fig_pb, use_container_width=True)
 
-            # Excel 다운로드
-            def gen_sweep_excel():
-                df_exp = pd.DataFrame({
-                    sweep_label: sv_vals,
-                    "Case A 수압 (MPa)": t_A,
-                    "Case B 수압 (MPa)": t_B,
-                    "개선율 (%)": sw["improvement_pct"],
-                    "Case A 판정": ["PASS" if p else "FAIL" for p in sw["pass_fail_A"]],
-                    "Case B 판정": ["PASS" if p else "FAIL" for p in sw["pass_fail_B"]],
+                # 데이터 테이블
+                st.markdown("#### 스캔 결과 상세 테이블")
+                df_mc = pd.DataFrame({
+                    "반복 횟수": [int(v) for v in sv_vals],
+                    "평균 수압 (MPa)": [f"{v:.4f}" for v in mc_mean],
+                    "표준편차 (MPa)": [f"{v:.6f}" for v in mc_std],
+                    "최솟값 (MPa)": [f"{v:.4f}" for v in mc_min],
+                    "최댓값 (MPa)": [f"{v:.4f}" for v in mc_max],
+                    "기준 미달 (%)": [f"{v*100:.1f}" for v in mc_pbelow],
                 })
-                buf = io.BytesIO()
-                with pd.ExcelWriter(buf, engine="openpyxl") as w:
-                    df_exp.to_excel(w, sheet_name="Variable Sweep", index=False)
-                return buf.getvalue()
+                st.dataframe(df_mc, use_container_width=True, height=400)
+
+                # Excel 다운로드
+                def gen_sweep_excel():
+                    df_exp = pd.DataFrame({
+                        "반복 횟수": [int(v) for v in sv_vals],
+                        "평균 수압 (MPa)": mc_mean,
+                        "표준편차 (MPa)": mc_std,
+                        "최솟값 (MPa)": mc_min,
+                        "최댓값 (MPa)": mc_max,
+                        "기준 미달 확률 (%)": [v * 100 for v in mc_pbelow],
+                    })
+                    buf = io.BytesIO()
+                    with pd.ExcelWriter(buf, engine="openpyxl") as w:
+                        df_exp.to_excel(w, sheet_name="MC Iterations Sweep", index=False)
+                    return buf.getvalue()
+
+            # ────── 기존 변수 스캔 결과 (설계 유량/압력/비드/헤드수) ──────
+            else:
+                t_A = sw["terminal_A"]
+                t_B = sw["terminal_B"]
+
+                # 임계점 KPI
+                st.markdown("#### 임계점 탐지 결과 (Critical Point Detection)")
+                kc1, kc2 = st.columns(2)
+                crit_A_str = f"{sw['critical_A']:.2f}" if sw["critical_A"] is not None else "해당 없음 (전 구간 PASS)"
+                crit_B_str = f"{sw['critical_B']:.2f}" if sw["critical_B"] is not None else "해당 없음 (전 구간 PASS)"
+                kc1.metric(f"Case A 임계점 ({sweep_label})", crit_A_str)
+                kc2.metric(f"Case B 임계점 ({sweep_label})", crit_B_str)
+
+                # 스캔 그래프
+                st.markdown("#### 변수-수압 응답 곡선")
+                fig_sw = go.Figure()
+                fig_sw.add_trace(go.Scatter(
+                    x=sv_vals, y=t_A,
+                    name=f"Case A (비드 {bead_height}mm)",
+                    mode="lines+markers",
+                    line=dict(color="#EF553B", dash="dash", width=2), marker=dict(size=6),
+                ))
+                fig_sw.add_trace(go.Scatter(
+                    x=sv_vals, y=t_B,
+                    name="Case B (비드 0mm, 신기술)",
+                    mode="lines+markers",
+                    line=dict(color="#636EFA", width=3), marker=dict(size=6),
+                ))
+                fig_sw.add_hline(y=MIN_TERMINAL_PRESSURE_MPA, line_dash="dot",
+                                 line_color="green", line_width=2,
+                                 annotation_text=f"최소 기준 {MIN_TERMINAL_PRESSURE_MPA} MPa")
+                # 임계점 마커
+                if sw["critical_A"] is not None:
+                    idx_ca = sv_vals.index(sw["critical_A"])
+                    fig_sw.add_trace(go.Scatter(
+                        x=[sw["critical_A"]], y=[t_A[idx_ca]],
+                        mode="markers", name=f"A 임계점 ({sw['critical_A']:.2f})",
+                        marker=dict(size=16, color="#EF553B", symbol="diamond"),
+                        showlegend=True,
+                    ))
+                if sw["critical_B"] is not None:
+                    idx_cb = sv_vals.index(sw["critical_B"])
+                    fig_sw.add_trace(go.Scatter(
+                        x=[sw["critical_B"]], y=[t_B[idx_cb]],
+                        mode="markers", name=f"B 임계점 ({sw['critical_B']:.2f})",
+                        marker=dict(size=16, color="#636EFA", symbol="diamond"),
+                        showlegend=True,
+                    ))
+                fig_sw.update_layout(
+                    xaxis_title=sweep_label, yaxis_title="최악 말단 수압 (MPa)",
+                    template="plotly_white", height=500,
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                    font=dict(family="Arial", size=13),
+                )
+                st.plotly_chart(fig_sw, use_container_width=True)
+
+                # PASS/FAIL 데이터 테이블
+                st.markdown("#### 스캔 결과 상세 테이블")
+                df_sw = pd.DataFrame({
+                    sweep_label: sv_vals,
+                    "Case A 수압 (MPa)": [f"{v:.4f}" for v in t_A],
+                    "Case B 수압 (MPa)": [f"{v:.4f}" for v in t_B],
+                    "개선율 (%)": [f"{v:.1f}" for v in sw["improvement_pct"]],
+                    "Case A": ["PASS" if p else "FAIL" for p in sw["pass_fail_A"]],
+                    "Case B": ["PASS" if p else "FAIL" for p in sw["pass_fail_B"]],
+                })
+                st.dataframe(df_sw, use_container_width=True, height=400)
+
+                # Excel 다운로드
+                def gen_sweep_excel():
+                    df_exp = pd.DataFrame({
+                        sweep_label: sv_vals,
+                        "Case A 수압 (MPa)": t_A,
+                        "Case B 수압 (MPa)": t_B,
+                        "개선율 (%)": sw["improvement_pct"],
+                        "Case A 판정": ["PASS" if p else "FAIL" for p in sw["pass_fail_A"]],
+                        "Case B 판정": ["PASS" if p else "FAIL" for p in sw["pass_fail_B"]],
+                    })
+                    buf = io.BytesIO()
+                    with pd.ExcelWriter(buf, engine="openpyxl") as w:
+                        df_exp.to_excel(w, sheet_name="Variable Sweep", index=False)
+                    return buf.getvalue()
 
             # DOCX 다운로드
             def gen_sweep_docx():
@@ -2152,7 +2287,8 @@ if run_button or "results" in st.session_state:
                     return t
 
                 # 표지
-                title = doc.add_heading("FiPLSim Variable Sweep Report", level=0)
+                _doc_title = "FiPLSim MC Iterations Sweep Report" if _is_mc_sweep else "FiPLSim Variable Sweep Report"
+                title = doc.add_heading(_doc_title, level=0)
                 title.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 for r in title.runs: r.font.color.rgb = navy
                 meta = doc.add_paragraph(f"생성 일시: {now_str}  |  FiPLSim: Advanced Fire Protection Pipe Let Simulator")
@@ -2171,53 +2307,96 @@ if run_button or "results" in st.session_state:
                     ("총 케이스 수", f"{len(sv_vals)}"),
                 ])
 
-                # 2. 임계점
-                doc.add_paragraph()
-                heading_s("2. 임계점 탐지 (Critical Point)")
-                doc.add_paragraph(
-                    f"Case A 임계점: {crit_A_str}  |  Case B 임계점: {crit_B_str}"
-                )
-
-                # 3. 스캔 그래프
-                try:
-                    png = fig_sw.to_image(format="png", width=1200, height=600, scale=2, engine="kaleido")
+                if _is_mc_sweep:
+                    # MC 전용 DOCX 내용
                     doc.add_paragraph()
-                    heading_s("3. 변수-수압 응답 곡선")
-                    doc.add_picture(io.BytesIO(png), width=Inches(6.0))
-                    doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    cap = doc.add_paragraph()
-                    cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    rc = cap.add_run(f"그림 1. {sweep_label} 변화에 따른 말단 수압 응답")
-                    rc.font.size = Pt(9); rc.font.color.rgb = RGBColor(0x66,0x66,0x66); rc.italic = True
-                except Exception:
-                    pass
+                    heading_s("2. MC 수렴성 요약")
+                    doc.add_paragraph(
+                        f"최종 평균 수압: {mc_mean[-1]:.4f} MPa  |  "
+                        f"최종 표준편차: {mc_std[-1]:.6f} MPa  |  "
+                        f"기준 미달 확률: {mc_pbelow[-1]*100:.1f}%"
+                    )
 
-                # 4. 전체 데이터 테이블
-                doc.add_page_break()
-                heading_s("4. 스캔 결과 데이터 (Full Data)")
-                data_rows = []
-                for i in range(len(sv_vals)):
-                    data_rows.append((
-                        f"{sv_vals[i]:.2f}" if sv_key != "heads_per_branch" else f"{int(sv_vals[i])}",
-                        f"{t_A[i]:.4f}", f"{t_B[i]:.4f}",
-                        f"{sw['improvement_pct'][i]:.1f}",
-                        "PASS" if sw["pass_fail_A"][i] else "FAIL",
-                        "PASS" if sw["pass_fail_B"][i] else "FAIL",
-                    ))
-                t_data = tbl([sweep_label, "A 수압(MPa)", "B 수압(MPa)", "개선율(%)", "A 판정", "B 판정"], data_rows)
+                    # 그래프
+                    try:
+                        png1 = fig_mc.to_image(format="png", width=1200, height=600, scale=2, engine="kaleido")
+                        doc.add_paragraph()
+                        heading_s("3. 반복 횟수별 수렴 곡선")
+                        doc.add_picture(io.BytesIO(png1), width=Inches(6.0))
+                        doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    except Exception:
+                        pass
+                    try:
+                        png2 = fig_pb.to_image(format="png", width=1200, height=500, scale=2, engine="kaleido")
+                        doc.add_paragraph()
+                        heading_s("4. 기준 미달 확률 변화")
+                        doc.add_picture(io.BytesIO(png2), width=Inches(6.0))
+                        doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    except Exception:
+                        pass
 
-                # PASS/FAIL 셀 색상
-                g = RGBColor(0x27,0xAE,0x60)
-                rd = RGBColor(0xC0,0x39,0x2B)
-                for ri in range(1, len(t_data.rows)):
-                    for ci in [4, 5]:
-                        cell = t_data.rows[ri].cells[ci]
-                        txt = cell.text.strip()
-                        for p in cell.paragraphs:
-                            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                            for rn in p.runs:
-                                rn.bold = True
-                                rn.font.color.rgb = g if txt == "PASS" else rd
+                    # 데이터 테이블
+                    doc.add_page_break()
+                    heading_s("5. 스캔 결과 데이터 (Full Data)")
+                    mc_rows = []
+                    for i in range(len(sv_vals)):
+                        mc_rows.append((
+                            f"{int(sv_vals[i])}",
+                            f"{mc_mean[i]:.4f}", f"{mc_std[i]:.6f}",
+                            f"{mc_min[i]:.4f}", f"{mc_max[i]:.4f}",
+                            f"{mc_pbelow[i]*100:.1f}",
+                        ))
+                    tbl(["반복 횟수", "평균(MPa)", "표준편차(MPa)", "최솟값(MPa)", "최댓값(MPa)", "미달(%)"], mc_rows)
+
+                else:
+                    # 기존 변수 스캔 DOCX 내용
+                    # 2. 임계점
+                    doc.add_paragraph()
+                    heading_s("2. 임계점 탐지 (Critical Point)")
+                    doc.add_paragraph(
+                        f"Case A 임계점: {crit_A_str}  |  Case B 임계점: {crit_B_str}"
+                    )
+
+                    # 3. 스캔 그래프
+                    try:
+                        png = fig_sw.to_image(format="png", width=1200, height=600, scale=2, engine="kaleido")
+                        doc.add_paragraph()
+                        heading_s("3. 변수-수압 응답 곡선")
+                        doc.add_picture(io.BytesIO(png), width=Inches(6.0))
+                        doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        cap = doc.add_paragraph()
+                        cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        rc = cap.add_run(f"그림 1. {sweep_label} 변화에 따른 말단 수압 응답")
+                        rc.font.size = Pt(9); rc.font.color.rgb = RGBColor(0x66,0x66,0x66); rc.italic = True
+                    except Exception:
+                        pass
+
+                    # 4. 전체 데이터 테이블
+                    doc.add_page_break()
+                    heading_s("4. 스캔 결과 데이터 (Full Data)")
+                    data_rows = []
+                    for i in range(len(sv_vals)):
+                        data_rows.append((
+                            f"{sv_vals[i]:.2f}" if sv_key not in _int_format_keys else f"{int(sv_vals[i])}",
+                            f"{t_A[i]:.4f}", f"{t_B[i]:.4f}",
+                            f"{sw['improvement_pct'][i]:.1f}",
+                            "PASS" if sw["pass_fail_A"][i] else "FAIL",
+                            "PASS" if sw["pass_fail_B"][i] else "FAIL",
+                        ))
+                    t_data = tbl([sweep_label, "A 수압(MPa)", "B 수압(MPa)", "개선율(%)", "A 판정", "B 판정"], data_rows)
+
+                    # PASS/FAIL 셀 색상
+                    g = RGBColor(0x27,0xAE,0x60)
+                    rd = RGBColor(0xC0,0x39,0x2B)
+                    for ri in range(1, len(t_data.rows)):
+                        for ci in [4, 5]:
+                            cell = t_data.rows[ri].cells[ci]
+                            txt = cell.text.strip()
+                            for p in cell.paragraphs:
+                                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                                for rn in p.runs:
+                                    rn.bold = True
+                                    rn.font.color.rgb = g if txt == "PASS" else rd
 
                 # 푸터
                 doc.add_paragraph()

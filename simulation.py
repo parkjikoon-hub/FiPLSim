@@ -277,16 +277,68 @@ def run_variable_sweep(
     beads_per_branch: int = DEFAULT_BEADS_PER_BRANCH,
     topology: str = "tree",
     relaxation: float = 0.5,
+    mc_min_defects: int = DEFAULT_MIN_DEFECTS,
+    mc_max_defects: int = DEFAULT_MAX_DEFECTS,
 ) -> dict:
     """
     특정 설계 변수를 연속 변화시키며 Case A/B 말단 수압 변화 및 임계점을 탐지.
 
-    sweep_variable: "design_flow" | "inlet_pressure" | "bead_height" | "heads_per_branch"
+    sweep_variable: "design_flow" | "inlet_pressure" | "bead_height"
+                  | "heads_per_branch" | "mc_iterations"
     """
     sweep_values = np.arange(start_val, end_val + step_val / 2, step_val).tolist()
     if not sweep_values:
         sweep_values = [start_val]
 
+    # ── 몬테카를로 반복 횟수 스캔: MC 통계값 수집 ──
+    if sweep_variable == "mc_iterations":
+        mc_mean = []
+        mc_std = []
+        mc_min = []
+        mc_max = []
+        mc_p_below = []
+
+        for val in sweep_values:
+            n_iter = max(1, int(val))
+            try:
+                mc_res = run_dynamic_monte_carlo(
+                    n_iterations=n_iter,
+                    min_defects=mc_min_defects,
+                    max_defects=mc_max_defects,
+                    bead_height_mm=bead_height_mm,
+                    num_branches=num_branches,
+                    heads_per_branch=heads_per_branch,
+                    branch_spacing_m=branch_spacing_m,
+                    head_spacing_m=head_spacing_m,
+                    inlet_pressure_mpa=inlet_pressure_mpa,
+                    total_flow_lpm=total_flow_lpm,
+                    beads_per_branch=beads_per_branch,
+                    topology=topology,
+                    relaxation=relaxation,
+                )
+                mc_mean.append(mc_res["mean_pressure"])
+                mc_std.append(mc_res["std_pressure"])
+                mc_min.append(mc_res["min_pressure"])
+                mc_max.append(mc_res["max_pressure"])
+                mc_p_below.append(mc_res["p_below_threshold"])
+            except Exception:
+                mc_mean.append(0.0)
+                mc_std.append(0.0)
+                mc_min.append(0.0)
+                mc_max.append(0.0)
+                mc_p_below.append(0.0)
+
+        return {
+            "sweep_variable": sweep_variable,
+            "sweep_values": sweep_values,
+            "mc_mean": mc_mean,
+            "mc_std": mc_std,
+            "mc_min": mc_min,
+            "mc_max": mc_max,
+            "mc_p_below": mc_p_below,
+        }
+
+    # ── 기존 변수 스캔: Case A/B 비교 ──
     terminal_A = []
     terminal_B = []
     improvement_pct = []
