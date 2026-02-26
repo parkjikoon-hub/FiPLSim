@@ -1818,89 +1818,135 @@ if run_button or "results" in st.session_state:
             sweep_doc = st.session_state.get("sweep_results")
             if sweep_doc:
                 doc.add_page_break()
-                add_heading_styled("5. 변수 스캐닝 분석 (Variable Sweep)", level=1)
+                _is_mc_doc = sweep_doc.get("sweep_variable") == "mc_iterations"
                 sw_var_names = {
                     "design_flow": "설계 유량 (LPM)",
                     "inlet_pressure": "입구 압력 (MPa)",
                     "bead_height": "비드 높이 (mm)",
                     "heads_per_branch": "가지배관당 헤드 수",
+                    "mc_iterations": "몬테카를로 반복 횟수",
                 }
                 sw_label = sw_var_names.get(sweep_doc["sweep_variable"], sweep_doc["sweep_variable"])
                 sw_vals_doc = sweep_doc["sweep_values"]
 
-                add_heading_styled("5.1 스캔 설정", level=2)
-                add_table_from_data(["항목", "값"], [
-                    ("스캔 변수", sw_label),
-                    ("범위", f"{sw_vals_doc[0]} ~ {sw_vals_doc[-1]}"),
-                    ("총 케이스 수", f"{len(sw_vals_doc)}"),
-                ])
+                if _is_mc_doc:
+                    # ── MC 반복 횟수 스캔 DOCX ──
+                    add_heading_styled("5. MC 반복 횟수 스캔 분석", level=1)
 
-                doc.add_paragraph()
-                add_heading_styled("5.2 임계점 탐지", level=2)
-                ca_str = f"{sweep_doc['critical_A']:.2f}" if sweep_doc["critical_A"] is not None else "해당 없음 (전 구간 PASS)"
-                cb_str = f"{sweep_doc['critical_B']:.2f}" if sweep_doc["critical_B"] is not None else "해당 없음 (전 구간 PASS)"
-                p_ca = doc.add_paragraph()
-                p_ca.add_run(f"Case A 임계점: ").bold = True
-                p_ca.add_run(ca_str)
-                p_cb = doc.add_paragraph()
-                p_cb.add_run(f"Case B 임계점: ").bold = True
-                p_cb.add_run(cb_str)
+                    add_heading_styled("5.1 스캔 설정", level=2)
+                    add_table_from_data(["항목", "값"], [
+                        ("스캔 변수", sw_label),
+                        ("범위", f"{int(sw_vals_doc[0])} ~ {int(sw_vals_doc[-1])}"),
+                        ("총 케이스 수", f"{len(sw_vals_doc)}"),
+                    ])
 
-                # 스캔 그래프
-                if charts_available:
                     doc.add_paragraph()
-                    add_heading_styled("5.3 변수-수압 응답 곡선", level=2)
-                    fig_sw_doc = go.Figure()
-                    fig_sw_doc.add_trace(go.Scatter(
-                        x=sw_vals_doc, y=sweep_doc["terminal_A"],
-                        name="Case A", mode="lines+markers",
-                        line=dict(color="#EF553B", dash="dash", width=2), marker=dict(size=6),
-                    ))
-                    fig_sw_doc.add_trace(go.Scatter(
-                        x=sw_vals_doc, y=sweep_doc["terminal_B"],
-                        name="Case B", mode="lines+markers",
-                        line=dict(color="#636EFA", width=3), marker=dict(size=6),
-                    ))
-                    fig_sw_doc.add_hline(y=MIN_TERMINAL_PRESSURE_MPA, line_dash="dot",
-                                         line_color="green", line_width=2)
-                    if sweep_doc["critical_A"] is not None:
-                        idx_d = sw_vals_doc.index(sweep_doc["critical_A"])
-                        fig_sw_doc.add_trace(go.Scatter(
-                            x=[sweep_doc["critical_A"]], y=[sweep_doc["terminal_A"][idx_d]],
-                            mode="markers", name="A 임계점",
-                            marker=dict(size=16, color="#EF553B", symbol="diamond"),
-                        ))
-                    if sweep_doc["critical_B"] is not None:
-                        idx_d = sw_vals_doc.index(sweep_doc["critical_B"])
-                        fig_sw_doc.add_trace(go.Scatter(
-                            x=[sweep_doc["critical_B"]], y=[sweep_doc["terminal_B"][idx_d]],
-                            mode="markers", name="B 임계점",
-                            marker=dict(size=16, color="#636EFA", symbol="diamond"),
-                        ))
-                    fig_sw_doc.update_layout(
-                        xaxis_title=sw_label, yaxis_title="최악 말단 수압 (MPa)",
-                        template="plotly_white", height=500,
-                        font=dict(family="Arial", size=13),
-                    )
-                    add_chart(fig_sw_doc, f"{sw_label} 변화에 따른 말단 수압 응답", fw=1200, fh=500)
+                    add_heading_styled("5.2 MC 수렴성 요약", level=2)
+                    _mc_mean_doc = sweep_doc["mc_mean"]
+                    _mc_std_doc = sweep_doc["mc_std"]
+                    _mc_min_doc = sweep_doc["mc_min"]
+                    _mc_max_doc = sweep_doc["mc_max"]
+                    _mc_pb_doc = sweep_doc["mc_p_below"]
+                    p_mc = doc.add_paragraph()
+                    p_mc.add_run(f"최종 평균 수압: {_mc_mean_doc[-1]:.4f} MPa  |  "
+                                 f"표준편차: {_mc_std_doc[-1]:.6f} MPa  |  "
+                                 f"기준 미달 확률: {_mc_pb_doc[-1]*100:.1f}%")
 
-                # 전체 데이터 테이블
-                doc.add_paragraph()
-                add_heading_styled("5.4 스캔 결과 데이터", level=2)
-                sw_data_rows = []
-                for i in range(len(sw_vals_doc)):
-                    sw_data_rows.append((
-                        f"{sw_vals_doc[i]:.2f}" if sweep_doc["sweep_variable"] != "heads_per_branch" else f"{int(sw_vals_doc[i])}",
-                        f"{sweep_doc['terminal_A'][i]:.4f}",
-                        f"{sweep_doc['terminal_B'][i]:.4f}",
-                        f"{sweep_doc['improvement_pct'][i]:.1f}",
-                        "PASS" if sweep_doc["pass_fail_A"][i] else "FAIL",
-                        "PASS" if sweep_doc["pass_fail_B"][i] else "FAIL",
-                    ))
-                add_table_from_data(
-                    [sw_label, "A 수압(MPa)", "B 수압(MPa)", "개선율(%)", "A 판정", "B 판정"],
-                    sw_data_rows,
-                )
+                    # MC 데이터 테이블
+                    doc.add_paragraph()
+                    add_heading_styled("5.3 스캔 결과 데이터", level=2)
+                    mc_doc_rows = []
+                    for i in range(len(sw_vals_doc)):
+                        mc_doc_rows.append((
+                            f"{int(sw_vals_doc[i])}",
+                            f"{_mc_mean_doc[i]:.4f}",
+                            f"{_mc_std_doc[i]:.6f}",
+                            f"{_mc_min_doc[i]:.4f}",
+                            f"{_mc_max_doc[i]:.4f}",
+                            f"{_mc_pb_doc[i]*100:.1f}",
+                        ))
+                    add_table_from_data(
+                        ["반복 횟수", "평균(MPa)", "표준편차(MPa)", "최솟값(MPa)", "최댓값(MPa)", "미달(%)"],
+                        mc_doc_rows,
+                    )
+                else:
+                    # ── 기존 변수 스캔 DOCX ──
+                    add_heading_styled("5. 변수 스캐닝 분석 (Variable Sweep)", level=1)
+
+                    add_heading_styled("5.1 스캔 설정", level=2)
+                    add_table_from_data(["항목", "값"], [
+                        ("스캔 변수", sw_label),
+                        ("범위", f"{sw_vals_doc[0]} ~ {sw_vals_doc[-1]}"),
+                        ("총 케이스 수", f"{len(sw_vals_doc)}"),
+                    ])
+
+                    doc.add_paragraph()
+                    add_heading_styled("5.2 임계점 탐지", level=2)
+                    ca_str = f"{sweep_doc['critical_A']:.2f}" if sweep_doc.get("critical_A") is not None else "해당 없음 (전 구간 PASS)"
+                    cb_str = f"{sweep_doc['critical_B']:.2f}" if sweep_doc.get("critical_B") is not None else "해당 없음 (전 구간 PASS)"
+                    p_ca = doc.add_paragraph()
+                    p_ca.add_run(f"Case A 임계점: ").bold = True
+                    p_ca.add_run(ca_str)
+                    p_cb = doc.add_paragraph()
+                    p_cb.add_run(f"Case B 임계점: ").bold = True
+                    p_cb.add_run(cb_str)
+
+                    # 스캔 그래프
+                    if charts_available:
+                        doc.add_paragraph()
+                        add_heading_styled("5.3 변수-수압 응답 곡선", level=2)
+                        fig_sw_doc = go.Figure()
+                        fig_sw_doc.add_trace(go.Scatter(
+                            x=sw_vals_doc, y=sweep_doc["terminal_A"],
+                            name="Case A", mode="lines+markers",
+                            line=dict(color="#EF553B", dash="dash", width=2), marker=dict(size=6),
+                        ))
+                        fig_sw_doc.add_trace(go.Scatter(
+                            x=sw_vals_doc, y=sweep_doc["terminal_B"],
+                            name="Case B", mode="lines+markers",
+                            line=dict(color="#636EFA", width=3), marker=dict(size=6),
+                        ))
+                        fig_sw_doc.add_hline(y=MIN_TERMINAL_PRESSURE_MPA, line_dash="dot",
+                                             line_color="green", line_width=2)
+                        if sweep_doc.get("critical_A") is not None:
+                            idx_d = sw_vals_doc.index(sweep_doc["critical_A"])
+                            fig_sw_doc.add_trace(go.Scatter(
+                                x=[sweep_doc["critical_A"]], y=[sweep_doc["terminal_A"][idx_d]],
+                                mode="markers", name="A 임계점",
+                                marker=dict(size=16, color="#EF553B", symbol="diamond"),
+                            ))
+                        if sweep_doc.get("critical_B") is not None:
+                            idx_d = sw_vals_doc.index(sweep_doc["critical_B"])
+                            fig_sw_doc.add_trace(go.Scatter(
+                                x=[sweep_doc["critical_B"]], y=[sweep_doc["terminal_B"][idx_d]],
+                                mode="markers", name="B 임계점",
+                                marker=dict(size=16, color="#636EFA", symbol="diamond"),
+                            ))
+                        fig_sw_doc.update_layout(
+                            xaxis_title=sw_label, yaxis_title="최악 말단 수압 (MPa)",
+                            template="plotly_white", height=500,
+                            font=dict(family="Arial", size=13),
+                        )
+                        add_chart(fig_sw_doc, f"{sw_label} 변화에 따른 말단 수압 응답", fw=1200, fh=500)
+
+                    # 전체 데이터 테이블
+                    doc.add_paragraph()
+                    add_heading_styled("5.4 스캔 결과 데이터", level=2)
+                    _int_keys_doc = {"heads_per_branch", "mc_iterations"}
+                    sw_data_rows = []
+                    for i in range(len(sw_vals_doc)):
+                        sw_data_rows.append((
+                            f"{sw_vals_doc[i]:.2f}" if sweep_doc["sweep_variable"] not in _int_keys_doc else f"{int(sw_vals_doc[i])}",
+                            f"{sweep_doc['terminal_A'][i]:.4f}",
+                            f"{sweep_doc['terminal_B'][i]:.4f}",
+                            f"{sweep_doc['improvement_pct'][i]:.1f}",
+                            "PASS" if sweep_doc["pass_fail_A"][i] else "FAIL",
+                            "PASS" if sweep_doc["pass_fail_B"][i] else "FAIL",
+                        ))
+                    add_table_from_data(
+                        [sw_label, "A 수압(MPa)", "B 수압(MPa)", "개선율(%)", "A 판정", "B 판정"],
+                        sw_data_rows,
+                    )
                 nfpc_section_num = "6"
             else:
                 nfpc_section_num = "5"
