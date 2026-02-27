@@ -13,6 +13,7 @@ from constants import (
     DEFAULT_NUM_BRANCHES, DEFAULT_HEADS_PER_BRANCH,
     DEFAULT_BRANCH_SPACING_M, DEFAULT_HEAD_SPACING_M,
     DEFAULT_BEADS_PER_BRANCH,
+    DEFAULT_BERNOULLI_MC_ITERATIONS,
 )
 from pipe_network import (
     generate_dynamic_system, calculate_dynamic_system,
@@ -138,6 +139,177 @@ def run_dynamic_monte_carlo(
         "n_iterations": n_iterations,
         "total_fittings": total_fittings,
         "beads_per_branch": beads_per_branch,
+    }
+
+
+# ══════════════════════════════════════════════
+#  베르누이 몬테카를로 시뮬레이션
+# ══════════════════════════════════════════════
+
+def run_bernoulli_monte_carlo(
+    p_bead: float = 0.5,
+    n_iterations: int = DEFAULT_BERNOULLI_MC_ITERATIONS,
+    bead_height_mm: float = 1.5,
+    num_branches: int = DEFAULT_NUM_BRANCHES,
+    heads_per_branch: int = DEFAULT_HEADS_PER_BRANCH,
+    branch_spacing_m: float = DEFAULT_BRANCH_SPACING_M,
+    head_spacing_m: float = DEFAULT_HEAD_SPACING_M,
+    inlet_pressure_mpa: float = DEFAULT_INLET_PRESSURE_MPA,
+    total_flow_lpm: float = DEFAULT_TOTAL_FLOW_LPM,
+    K1_base: float = K1_BASE,
+    K2_val: float = K2,
+    K3_val: float = K3,
+    beads_per_branch: int = 0,
+    topology: str = "tree",
+    relaxation: float = 0.5,
+) -> dict:
+    """
+    베르누이 MC: 각 접합부에 독립적 확률 p_bead로 비드 존재 여부 결정.
+
+    기존 MC와의 핵심 차이:
+    - 기존 MC: min~max개 결함을 균일 무작위 선택
+    - 베르누이 MC: 각 접합부 독립 Bernoulli(p_bead) 판정
+    - 용접 비드: rng=None (균등 배치, 매 시행 동일 위치)
+    """
+    rng = np.random.default_rng()
+    total_fittings = num_branches * heads_per_branch
+    worst_pressures = np.zeros(n_iterations)
+    bead_counts = np.zeros(n_iterations, dtype=int)
+
+    common = dict(
+        num_branches=num_branches,
+        heads_per_branch=heads_per_branch,
+        branch_spacing_m=branch_spacing_m,
+        head_spacing_m=head_spacing_m,
+        inlet_pressure_mpa=inlet_pressure_mpa,
+        total_flow_lpm=total_flow_lpm,
+        K1_base=K1_base,
+        K2_val=K2_val,
+    )
+
+    for trial in range(n_iterations):
+        # * 베르누이 비드 배치: 각 접합부 독립적으로 확률 p_bead
+        rand_vals = rng.uniform(0, 1, size=(num_branches, heads_per_branch))
+        beads_2d = [[0.0] * heads_per_branch for _ in range(num_branches)]
+        count = 0
+        for b in range(num_branches):
+            for h in range(heads_per_branch):
+                if rand_vals[b][h] <= p_bead:
+                    beads_2d[b][h] = bead_height_mm
+                    count += 1
+        bead_counts[trial] = count
+
+        # * 시스템 빌드 — 용접 비드는 균등 배치 (rng=None)
+        if topology == "grid":
+            from hardy_cross import run_grid_system
+            result = run_grid_system(
+                bead_heights_2d=beads_2d,
+                beads_per_branch=beads_per_branch,
+                bead_height_for_weld_mm=bead_height_mm,
+                rng=None,
+                K3_val=K3_val,
+                relaxation=relaxation,
+                **common,
+            )
+        else:
+            system = generate_dynamic_system(
+                bead_heights_2d=beads_2d,
+                beads_per_branch=beads_per_branch,
+                bead_height_for_weld_mm=bead_height_mm,
+                rng=None,
+                **common,
+            )
+            result = calculate_dynamic_system(system, K3_val)
+
+        worst_pressures[trial] = result["worst_terminal_mpa"]
+
+    below_threshold = np.sum(worst_pressures < MIN_TERMINAL_PRESSURE_MPA)
+
+    return {
+        "terminal_pressures": worst_pressures,
+        "bead_counts": bead_counts,
+        "mean_pressure": float(np.mean(worst_pressures)),
+        "std_pressure": float(np.std(worst_pressures, ddof=1)) if n_iterations > 1 else 0.0,
+        "min_pressure": float(np.min(worst_pressures)),
+        "max_pressure": float(np.max(worst_pressures)),
+        "p_below_threshold": float(below_threshold / n_iterations),
+        "mean_bead_count": float(np.mean(bead_counts)),
+        "expected_bead_count": float(total_fittings * p_bead),
+        "p_bead": p_bead,
+        "n_iterations": n_iterations,
+        "total_fittings": total_fittings,
+        "beads_per_branch": beads_per_branch,
+    }
+
+
+def run_bernoulli_sweep(
+    p_values: list,
+    n_iterations: int = DEFAULT_BERNOULLI_MC_ITERATIONS,
+    bead_height_mm: float = 1.5,
+    num_branches: int = DEFAULT_NUM_BRANCHES,
+    heads_per_branch: int = DEFAULT_HEADS_PER_BRANCH,
+    branch_spacing_m: float = DEFAULT_BRANCH_SPACING_M,
+    head_spacing_m: float = DEFAULT_HEAD_SPACING_M,
+    inlet_pressure_mpa: float = DEFAULT_INLET_PRESSURE_MPA,
+    total_flow_lpm: float = DEFAULT_TOTAL_FLOW_LPM,
+    K1_base: float = K1_BASE,
+    K2_val: float = K2,
+    K3_val: float = K3,
+    beads_per_branch: int = 0,
+    topology: str = "tree",
+    relaxation: float = 0.5,
+) -> dict:
+    """
+    여러 p_bead 값을 순회하며 베르누이 MC 실행, 요약 통계 수집.
+    """
+    results_list = []
+    mean_pressures, std_pressures = [], []
+    min_pressures, max_pressures = [], []
+    pf_percents = []
+    expected_bead_counts, mean_bead_counts = [], []
+
+    for p_val in p_values:
+        res = run_bernoulli_monte_carlo(
+            p_bead=p_val,
+            n_iterations=n_iterations,
+            bead_height_mm=bead_height_mm,
+            num_branches=num_branches,
+            heads_per_branch=heads_per_branch,
+            branch_spacing_m=branch_spacing_m,
+            head_spacing_m=head_spacing_m,
+            inlet_pressure_mpa=inlet_pressure_mpa,
+            total_flow_lpm=total_flow_lpm,
+            K1_base=K1_base,
+            K2_val=K2_val,
+            K3_val=K3_val,
+            beads_per_branch=beads_per_branch,
+            topology=topology,
+            relaxation=relaxation,
+        )
+        results_list.append(res)
+        mean_pressures.append(res["mean_pressure"])
+        std_pressures.append(res["std_pressure"])
+        min_pressures.append(res["min_pressure"])
+        max_pressures.append(res["max_pressure"])
+        pf_percents.append(res["p_below_threshold"] * 100.0)
+        expected_bead_counts.append(res["expected_bead_count"])
+        mean_bead_counts.append(res["mean_bead_count"])
+
+    return {
+        "p_values": list(p_values),
+        "results": results_list,
+        "summary": {
+            "p_values": list(p_values),
+            "mean_pressures": mean_pressures,
+            "std_pressures": std_pressures,
+            "min_pressures": min_pressures,
+            "max_pressures": max_pressures,
+            "pf_percents": pf_percents,
+            "expected_bead_counts": expected_bead_counts,
+            "mean_bead_counts": mean_bead_counts,
+        },
+        "n_iterations": n_iterations,
+        "total_fittings": num_branches * heads_per_branch,
     }
 
 
@@ -279,16 +451,67 @@ def run_variable_sweep(
     relaxation: float = 0.5,
     mc_min_defects: int = DEFAULT_MIN_DEFECTS,
     mc_max_defects: int = DEFAULT_MAX_DEFECTS,
+    mc_iterations: int = DEFAULT_BERNOULLI_MC_ITERATIONS,
 ) -> dict:
     """
     특정 설계 변수를 연속 변화시키며 Case A/B 말단 수압 변화 및 임계점을 탐지.
 
     sweep_variable: "design_flow" | "inlet_pressure" | "bead_height"
-                  | "heads_per_branch" | "mc_iterations"
+                  | "heads_per_branch" | "mc_iterations" | "bernoulli_p"
     """
     sweep_values = np.arange(start_val, end_val + step_val / 2, step_val).tolist()
     if not sweep_values:
         sweep_values = [start_val]
+
+    # ── 베르누이 확률 스캔: p_b 변화별 MC 통계 수집 ──
+    if sweep_variable == "bernoulli_p":
+        bern_mean, bern_std, bern_min, bern_max = [], [], [], []
+        bern_p_below, bern_expected, bern_actual = [], [], []
+
+        for val in sweep_values:
+            p_b = float(val)
+            try:
+                bern_res = run_bernoulli_monte_carlo(
+                    p_bead=p_b,
+                    n_iterations=mc_iterations,
+                    bead_height_mm=bead_height_mm,
+                    num_branches=num_branches,
+                    heads_per_branch=heads_per_branch,
+                    branch_spacing_m=branch_spacing_m,
+                    head_spacing_m=head_spacing_m,
+                    inlet_pressure_mpa=inlet_pressure_mpa,
+                    total_flow_lpm=total_flow_lpm,
+                    beads_per_branch=beads_per_branch,
+                    topology=topology,
+                    relaxation=relaxation,
+                )
+                bern_mean.append(bern_res["mean_pressure"])
+                bern_std.append(bern_res["std_pressure"])
+                bern_min.append(bern_res["min_pressure"])
+                bern_max.append(bern_res["max_pressure"])
+                bern_p_below.append(bern_res["p_below_threshold"])
+                bern_expected.append(bern_res["expected_bead_count"])
+                bern_actual.append(bern_res["mean_bead_count"])
+            except Exception:
+                bern_mean.append(0.0)
+                bern_std.append(0.0)
+                bern_min.append(0.0)
+                bern_max.append(0.0)
+                bern_p_below.append(0.0)
+                bern_expected.append(0.0)
+                bern_actual.append(0.0)
+
+        return {
+            "sweep_variable": sweep_variable,
+            "sweep_values": sweep_values,
+            "bern_mean": bern_mean,
+            "bern_std": bern_std,
+            "bern_min": bern_min,
+            "bern_max": bern_max,
+            "bern_p_below": bern_p_below,
+            "bern_expected": bern_expected,
+            "bern_actual": bern_actual,
+        }
 
     # ── 몬테카를로 반복 횟수 스캔: MC 통계값 수집 ──
     if sweep_variable == "mc_iterations":

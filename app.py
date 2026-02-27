@@ -34,7 +34,10 @@ from pipe_network import (
 from pump import (
     DynamicSystemCurve, load_pump, find_operating_point, calculate_energy_savings,
 )
-from simulation import run_dynamic_monte_carlo, run_dynamic_sensitivity, run_variable_sweep
+from simulation import (
+    run_dynamic_monte_carlo, run_dynamic_sensitivity, run_variable_sweep,
+    run_bernoulli_monte_carlo, run_bernoulli_sweep,
+)
 
 
 # ──────────────────────────────────────────────
@@ -564,13 +567,14 @@ if run_button or "results" in st.session_state:
                     )
 
     # ── 탭 ──
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         ":material/show_chart: 압력 프로파일",
         ":material/ssid_chart: P-Q 곡선",
         ":material/casino: 몬테카를로",
         ":material/bar_chart: 민감도 분석",
         ":material/download: 데이터 추출",
         ":material/search: 변수 스캐닝",
+        ":material/science: 베르누이 MC",
     ])
 
     # ═══ Tab 1: 압력 프로파일 ═══
@@ -1091,6 +1095,21 @@ if run_button or "results" in st.session_state:
                         "노드 수압 (MPa)": "",
                     })
                     pd.DataFrame(grid_rows).to_excel(w, sheet_name="Full Grid 노드 데이터", index=False)
+
+                # Sheet 10: 베르누이 MC 요약 (실행된 경우)
+                bern_doc = st.session_state.get("bernoulli_results")
+                if bern_doc:
+                    bern_sum = bern_doc["summary"]
+                    pd.DataFrame({
+                        "p (비드 확률)": bern_sum["p_values"],
+                        "기대 비드 수": bern_sum["expected_bead_counts"],
+                        "실측 비드 수": bern_sum["mean_bead_counts"],
+                        "평균 수압 (MPa)": bern_sum["mean_pressures"],
+                        "표준편차 (MPa)": bern_sum["std_pressures"],
+                        "최솟값 (MPa)": bern_sum["min_pressures"],
+                        "최댓값 (MPa)": bern_sum["max_pressures"],
+                        "규정 미달 Pf (%)": bern_sum["pf_percents"],
+                    }).to_excel(w, sheet_name="Bernoulli MC", index=False)
 
             return buf.getvalue()
 
@@ -1819,17 +1838,57 @@ if run_button or "results" in st.session_state:
             if sweep_doc:
                 doc.add_page_break()
                 _is_mc_doc = sweep_doc.get("sweep_variable") == "mc_iterations"
+                _is_bern_doc = sweep_doc.get("sweep_variable") == "bernoulli_p"
                 sw_var_names = {
                     "design_flow": "설계 유량 (LPM)",
                     "inlet_pressure": "입구 압력 (MPa)",
                     "bead_height": "비드 높이 (mm)",
                     "heads_per_branch": "가지배관당 헤드 수",
                     "mc_iterations": "몬테카를로 반복 횟수",
+                    "bernoulli_p": "비드 존재 확률 (p_b)",
                 }
                 sw_label = sw_var_names.get(sweep_doc["sweep_variable"], sweep_doc["sweep_variable"])
                 sw_vals_doc = sweep_doc["sweep_values"]
 
-                if _is_mc_doc:
+                if _is_bern_doc:
+                    # ── 베르누이 확률 스캔 DOCX ──
+                    add_heading_styled("5. 베르누이 확률 스캔 분석 (Bernoulli p Sweep)", level=1)
+
+                    add_heading_styled("5.1 스캔 설정", level=2)
+                    add_table_from_data(["항목", "값"], [
+                        ("스캔 변수", sw_label),
+                        ("범위", f"{sw_vals_doc[0]:.2f} ~ {sw_vals_doc[-1]:.2f}"),
+                        ("총 케이스 수", f"{len(sw_vals_doc)}"),
+                    ])
+
+                    doc.add_paragraph()
+                    add_heading_styled("5.2 통계 요약", level=2)
+                    _bd_mean = sweep_doc["bern_mean"]
+                    _bd_std = sweep_doc["bern_std"]
+                    _bd_min = sweep_doc["bern_min"]
+                    _bd_max = sweep_doc["bern_max"]
+                    _bd_pb = sweep_doc["bern_p_below"]
+                    _bd_exp = sweep_doc["bern_expected"]
+                    _bd_act = sweep_doc["bern_actual"]
+
+                    bd_rows = []
+                    for i in range(len(sw_vals_doc)):
+                        bd_rows.append((
+                            f"{sw_vals_doc[i]:.2f}",
+                            f"{_bd_exp[i]:.1f}",
+                            f"{_bd_act[i]:.1f}",
+                            f"{_bd_mean[i]:.4f}",
+                            f"{_bd_std[i]:.6f}",
+                            f"{_bd_min[i]:.4f}",
+                            f"{_bd_max[i]:.4f}",
+                            f"{_bd_pb[i]*100:.2f}",
+                        ))
+                    add_table_from_data(
+                        ["p_b", "기대비드", "실측비드", "평균(MPa)", "표준편차", "최솟값", "최댓값", "Pf(%)"],
+                        bd_rows,
+                    )
+
+                elif _is_mc_doc:
                     # ── MC 반복 횟수 스캔 DOCX ──
                     add_heading_styled("5. MC 반복 횟수 스캔 분석", level=1)
 
@@ -2014,6 +2073,34 @@ if run_button or "results" in st.session_state:
                     v_rows.append(("Case B", "수압", f"B#{v['branch']+1}", f"{v['pressure_mpa']:.4f} MPa — {kind}"))
                 add_table_from_data(["Case", "위반 유형", "위치", "상세"], v_rows)
 
+            # ═══ Section 6: 베르누이 MC (조건부) ═══
+            bern_doc = st.session_state.get("bernoulli_results")
+            if bern_doc:
+                doc.add_page_break()
+                add_heading_styled("6. 베르누이 MC 분석 (Bernoulli Monte Carlo)", level=1)
+                bern_sum = bern_doc["summary"]
+                doc.add_paragraph(
+                    f"각 접합부에 독립적 확률 p_b로 비드 존재를 설정한 "
+                    f"베르누이 MC 시뮬레이션 결과입니다. "
+                    f"(MC 반복: {bern_doc['n_iterations']}회, "
+                    f"접합부: {bern_doc['total_fittings']}개)"
+                )
+                bern_headers = ["p_b", "기대 비드", "실측 비드", "평균(MPa)",
+                                "표준편차", "최솟값", "최댓값", "Pf(%)"]
+                bern_rows = []
+                for _bi in range(len(bern_sum["p_values"])):
+                    bern_rows.append([
+                        f"{bern_sum['p_values'][_bi]:.2f}",
+                        f"{bern_sum['expected_bead_counts'][_bi]:.1f}",
+                        f"{bern_sum['mean_bead_counts'][_bi]:.1f}",
+                        f"{bern_sum['mean_pressures'][_bi]:.4f}",
+                        f"{bern_sum['std_pressures'][_bi]:.6f}",
+                        f"{bern_sum['min_pressures'][_bi]:.4f}",
+                        f"{bern_sum['max_pressures'][_bi]:.4f}",
+                        f"{bern_sum['pf_percents'][_bi]:.2f}",
+                    ])
+                add_table_from_data(bern_headers, bern_rows)
+
             # ── 푸터 ──
             doc.add_paragraph()
             footer = doc.add_paragraph()
@@ -2069,6 +2156,7 @@ if run_button or "results" in st.session_state:
             "비드 높이 (mm)": ("bead_height", 0.1, 5.0, 0.1),
             "가지배관당 헤드 수": ("heads_per_branch", 1.0, 50.0, 1.0),
             "몬테카를로 반복 횟수": ("mc_iterations", 10.0, 500.0, 10.0),
+            "비드 존재 확률 (p_b)": ("bernoulli_p", 0.05, 0.95, 0.05),
         }
         _int_format_keys = {"heads_per_branch", "mc_iterations"}
         col_a, col_b = st.columns([1, 2])
@@ -2087,6 +2175,8 @@ if run_button or "results" in st.session_state:
         n_steps = int((sw_end - sw_start) / sw_step) + 1 if sw_step > 0 else 0
         if sv_key == "mc_iterations":
             st.info(f"총 **{n_steps}개** 반복 횟수 조건으로 몬테카를로 시뮬레이션 수행 예정")
+        elif sv_key == "bernoulli_p":
+            st.info(f"총 **{n_steps}개** 비드 확률(p) 조건으로 베르누이 MC 수행 예정 (각 {mc_iterations}회 반복)")
         else:
             st.info(f"총 **{n_steps}개** 시뮬레이션 수행 예정 (현재 설정 기준)")
 
@@ -2105,6 +2195,7 @@ if run_button or "results" in st.session_state:
                     beads_per_branch=beads_per_branch,
                     topology=topology_key,
                     relaxation=hc_relaxation,
+                    mc_iterations=mc_iterations,
                 )
             st.session_state["sweep_results"] = sweep_res
             st.success(f"스캔 완료! {len(sweep_res['sweep_values'])}개 케이스 분석됨")
@@ -2114,9 +2205,95 @@ if run_button or "results" in st.session_state:
             sw = st.session_state["sweep_results"]
             sv_vals = sw["sweep_values"]
             _is_mc_sweep = sw["sweep_variable"] == "mc_iterations"
+            _is_bern_sweep = sw["sweep_variable"] == "bernoulli_p"
+
+            # ────── 베르누이 확률 스캔 전용 결과 ──────
+            if _is_bern_sweep:
+                _bm = sw["bern_mean"]
+                _bs = sw["bern_std"]
+                _bmin = sw["bern_min"]
+                _bmax = sw["bern_max"]
+                _bpb = sw["bern_p_below"]
+                _bexp = sw["bern_expected"]
+                _bact = sw["bern_actual"]
+
+                st.markdown("#### 베르누이 MC 스캔 결과")
+                _bk1, _bk2, _bk3 = st.columns(3)
+                _bk1.metric("최종 평균 수압", f"{_bm[-1]:.4f} MPa")
+                _bk2.metric("최종 표준편차", f"{_bs[-1]:.6f} MPa")
+                _bk3.metric("기준 미달 확률", f"{_bpb[-1]*100:.1f}%")
+
+                # 차트: p별 평균 수압 + 표준편차 밴드
+                _bu = [m + s for m, s in zip(_bm, _bs)]
+                _bl = [m - s for m, s in zip(_bm, _bs)]
+                fig_bs = go.Figure()
+                fig_bs.add_trace(go.Scatter(x=sv_vals, y=_bu, mode="lines",
+                    line=dict(width=0), showlegend=False, hoverinfo="skip"))
+                fig_bs.add_trace(go.Scatter(x=sv_vals, y=_bl, mode="lines",
+                    line=dict(width=0), fill="tonexty", fillcolor="rgba(99,110,250,0.15)",
+                    name="평균 +/- 1 표준편차"))
+                fig_bs.add_trace(go.Scatter(x=sv_vals, y=_bm,
+                    name="평균 말단 수압", mode="lines+markers",
+                    line=dict(color="#636EFA", width=3), marker=dict(size=7)))
+                fig_bs.add_trace(go.Scatter(x=sv_vals, y=_bmin,
+                    name="최솟값", mode="lines", line=dict(color="#EF553B", dash="dot")))
+                fig_bs.add_trace(go.Scatter(x=sv_vals, y=_bmax,
+                    name="최댓값", mode="lines", line=dict(color="#00CC96", dash="dot")))
+                fig_bs.add_hline(y=MIN_TERMINAL_PRESSURE_MPA, line_dash="dash",
+                    line_color="orange", line_width=2,
+                    annotation_text=f"최소 기준 {MIN_TERMINAL_PRESSURE_MPA} MPa")
+                fig_bs.update_layout(
+                    xaxis_title="비드 존재 확률 (p_b)",
+                    yaxis_title="말단 수압 (MPa)",
+                    template="plotly_white", height=500,
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                )
+                st.plotly_chart(fig_bs, use_container_width=True)
+
+                # Pf 차트
+                fig_bpf = go.Figure()
+                fig_bpf.add_trace(go.Scatter(x=sv_vals, y=[p*100 for p in _bpb],
+                    name="규정 미달 확률 (%)", mode="lines+markers",
+                    line=dict(color="#EF553B", width=3), marker=dict(size=7),
+                    fill="tozeroy", fillcolor="rgba(239,85,59,0.1)"))
+                fig_bpf.update_layout(
+                    xaxis_title="비드 존재 확률 (p_b)",
+                    yaxis_title="규정 미달 확률 (%)",
+                    template="plotly_white", height=350,
+                )
+                st.plotly_chart(fig_bpf, use_container_width=True)
+
+                # 데이터프레임
+                st.dataframe(pd.DataFrame({
+                    "p_b": sv_vals,
+                    "기대 비드 수": [f"{v:.1f}" for v in _bexp],
+                    "실측 비드 수": [f"{v:.1f}" for v in _bact],
+                    "평균 (MPa)": [f"{v:.4f}" for v in _bm],
+                    "표준편차 (MPa)": [f"{v:.6f}" for v in _bs],
+                    "최솟값 (MPa)": [f"{v:.4f}" for v in _bmin],
+                    "최댓값 (MPa)": [f"{v:.4f}" for v in _bmax],
+                    "Pf (%)": [f"{v*100:.2f}" for v in _bpb],
+                }), use_container_width=True, hide_index=True)
+
+                # Excel
+                def gen_sweep_excel():
+                    df_exp = pd.DataFrame({
+                        "p_b": sv_vals,
+                        "기대 비드 수": _bexp,
+                        "실측 비드 수": _bact,
+                        "평균 수압 (MPa)": _bm,
+                        "표준편차 (MPa)": _bs,
+                        "최솟값 (MPa)": _bmin,
+                        "최댓값 (MPa)": _bmax,
+                        "규정 미달 Pf (%)": [v * 100 for v in _bpb],
+                    })
+                    buf = io.BytesIO()
+                    with pd.ExcelWriter(buf, engine="openpyxl") as w:
+                        df_exp.to_excel(w, sheet_name="Bernoulli p Sweep", index=False)
+                    return buf.getvalue()
 
             # ────── 몬테카를로 반복 횟수 스캔 전용 결과 ──────
-            if _is_mc_sweep:
+            elif _is_mc_sweep:
                 mc_mean = sw["mc_mean"]
                 mc_std = sw["mc_std"]
                 mc_min = sw["mc_min"]
@@ -2333,7 +2510,12 @@ if run_button or "results" in st.session_state:
                     return t
 
                 # 표지
-                _doc_title = "FiPLSim MC Iterations Sweep Report" if _is_mc_sweep else "FiPLSim Variable Sweep Report"
+                if _is_bern_sweep:
+                    _doc_title = "FiPLSim Bernoulli p Sweep Report"
+                elif _is_mc_sweep:
+                    _doc_title = "FiPLSim MC Iterations Sweep Report"
+                else:
+                    _doc_title = "FiPLSim Variable Sweep Report"
                 title = doc.add_heading(_doc_title, level=0)
                 title.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 for r in title.runs: r.font.color.rgb = navy
@@ -2353,7 +2535,49 @@ if run_button or "results" in st.session_state:
                     ("총 케이스 수", f"{len(sv_vals)}"),
                 ])
 
-                if _is_mc_sweep:
+                if _is_bern_sweep:
+                    # 베르누이 확률 스캔 DOCX 내용
+                    doc.add_paragraph()
+                    heading_s("2. 베르누이 MC 요약")
+                    doc.add_paragraph(
+                        f"최종(p={sv_vals[-1]:.2f}) 평균 수압: {_bm[-1]:.4f} MPa  |  "
+                        f"표준편차: {_bs[-1]:.6f} MPa  |  "
+                        f"기준 미달 확률: {_bpb[-1]*100:.1f}%"
+                    )
+
+                    # 차트
+                    try:
+                        _png_bs = fig_bs.to_image(format="png", width=1200, height=600, scale=2, engine="kaleido")
+                        doc.add_paragraph()
+                        heading_s("3. 비드 확률별 평균 수압 곡선")
+                        doc.add_picture(io.BytesIO(_png_bs), width=Inches(6.0))
+                        doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    except Exception:
+                        pass
+                    try:
+                        _png_bpf = fig_bpf.to_image(format="png", width=1200, height=500, scale=2, engine="kaleido")
+                        doc.add_paragraph()
+                        heading_s("4. 규정 미달 확률 변화")
+                        doc.add_picture(io.BytesIO(_png_bpf), width=Inches(6.0))
+                        doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    except Exception:
+                        pass
+
+                    # 데이터 테이블
+                    doc.add_page_break()
+                    heading_s("5. 스캔 결과 데이터 (Full Data)")
+                    bd_rows = []
+                    for i in range(len(sv_vals)):
+                        bd_rows.append((
+                            f"{sv_vals[i]:.2f}",
+                            f"{_bexp[i]:.1f}", f"{_bact[i]:.1f}",
+                            f"{_bm[i]:.4f}", f"{_bs[i]:.6f}",
+                            f"{_bmin[i]:.4f}", f"{_bmax[i]:.4f}",
+                            f"{_bpb[i]*100:.2f}",
+                        ))
+                    tbl(["p_b", "기대비드", "실측비드", "평균(MPa)", "표준편차", "최솟값", "최댓값", "Pf(%)"], bd_rows)
+
+                elif _is_mc_sweep:
                     # MC 전용 DOCX 내용
                     doc.add_paragraph()
                     heading_s("2. MC 수렴성 요약")
@@ -2466,6 +2690,412 @@ if run_button or "results" in st.session_state:
                                     "FiPLSim_변수스캐닝_리포트.docx",
                                     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                                     use_container_width=True)
+
+    # ═══ Tab 7: 베르누이 MC ═══
+    with tab7:
+        st.header(":material/science: 베르누이 MC (Bernoulli Monte Carlo)")
+        st.caption(
+            "각 접합부(이음쇠)에 독립적으로 비드가 존재할 확률 **p_b**를 설정하여 "
+            "시공 품질에 따른 말단 수압 산포를 분석합니다. "
+            "기존 MC(결함 N개 무작위 선택)와 달리, 각 접합부가 독립적으로 비드 존재 여부를 판정합니다."
+        )
+
+        # ── 입력 모드 선택 ──
+        bern_mode = st.radio(
+            "분석 모드",
+            [":material/apps: 이산 프리셋 (Preset Levels)", ":material/timeline: 연속 스캔 (Continuous Sweep)"],
+            horizontal=True,
+            key="bern_mode_radio",
+        )
+        _is_preset = "이산" in bern_mode
+
+        if _is_preset:
+            preset_options = {
+                "우수 시공 (p=0.1)": 0.1,
+                "양호 시공 (p=0.3)": 0.3,
+                "보통 시공 (p=0.5)": 0.5,
+                "열악 시공 (p=0.7)": 0.7,
+                "매우 열악 (p=0.9)": 0.9,
+            }
+            selected_presets = st.multiselect(
+                "비드 존재 확률 수준 선택",
+                list(preset_options.keys()),
+                default=list(preset_options.keys()),
+                key="bern_preset_select",
+            )
+            bern_p_values = [preset_options[k] for k in selected_presets]
+            bern_n_iter = st.number_input(
+                "MC 반복 횟수 (N)", min_value=10, max_value=50000,
+                value=1000, step=100, key="bern_n_iter_preset",
+            )
+        else:
+            bc1, bc2, bc3 = st.columns(3)
+            p_start = bc1.number_input("시작 p", value=0.1, min_value=0.01,
+                                        max_value=0.99, step=0.05, format="%.2f",
+                                        key="bern_p_start")
+            p_end = bc2.number_input("종료 p", value=0.9, min_value=0.01,
+                                      max_value=0.99, step=0.05, format="%.2f",
+                                      key="bern_p_end")
+            p_step = bc3.number_input("증감 간격", value=0.1, min_value=0.01,
+                                       max_value=0.5, step=0.01, format="%.2f",
+                                       key="bern_p_step")
+            bern_p_values = np.arange(p_start, p_end + p_step / 2, p_step).tolist()
+            bern_n_iter = st.number_input(
+                "MC 반복 횟수 (N)", min_value=10, max_value=50000,
+                value=1000, step=100, key="bern_n_iter_sweep",
+            )
+
+        total_fittings_bern = num_branches * heads_per_branch
+        n_p_levels = len(bern_p_values) if bern_p_values else 0
+        st.info(
+            f"접합부: **{total_fittings_bern}개** ({num_branches} x {heads_per_branch}) | "
+            f"비드 높이: **{bead_height} mm** | "
+            f"분석 수준: **{n_p_levels}개** | "
+            f"MC 반복: **{bern_n_iter}회** | "
+            f"총 시뮬레이션: **{n_p_levels * bern_n_iter:,}회**"
+        )
+
+        if st.button(":material/science: 베르누이 MC 실행", use_container_width=True,
+                      key="bern_run_btn", disabled=(n_p_levels == 0)):
+            with st.spinner(f"베르누이 MC 실행 중... ({n_p_levels}개 수준 x {bern_n_iter}회)"):
+                bern_results = run_bernoulli_sweep(
+                    p_values=bern_p_values,
+                    n_iterations=bern_n_iter,
+                    bead_height_mm=bead_height,
+                    num_branches=num_branches,
+                    heads_per_branch=heads_per_branch,
+                    branch_spacing_m=branch_spacing,
+                    head_spacing_m=head_spacing,
+                    inlet_pressure_mpa=inlet_pressure,
+                    total_flow_lpm=float(design_flow),
+                    beads_per_branch=beads_per_branch,
+                    topology=topology_key,
+                    relaxation=hc_relaxation,
+                )
+            st.session_state["bernoulli_results"] = bern_results
+            st.success(f"완료! {n_p_levels}개 수준 분석됨")
+
+        # ── 결과 표시 ──
+        if "bernoulli_results" in st.session_state:
+            br = st.session_state["bernoulli_results"]
+            bsm = br["summary"]
+
+            # KPI 카드
+            st.markdown("#### 주요 결과 요약")
+            bk1, bk2, bk3 = st.columns(3)
+            bk1.metric(
+                f"p={bsm['p_values'][0]:.1f} 평균 수압",
+                f"{bsm['mean_pressures'][0]:.4f} MPa",
+            )
+            bk2.metric(
+                f"p={bsm['p_values'][-1]:.1f} 평균 수압",
+                f"{bsm['mean_pressures'][-1]:.4f} MPa",
+            )
+            fail_p = None
+            for _i, _pf in enumerate(bsm["pf_percents"]):
+                if _pf > 0:
+                    fail_p = bsm["p_values"][_i]
+                    break
+            bk3.metric(
+                "최초 규정 미달 발생 p",
+                f"{fail_p:.2f}" if fail_p else "해당 없음 (전 구간 PASS)",
+            )
+
+            # ── 차트 1: p별 평균 수압 + 표준편차 밴드 ──
+            st.markdown("#### 비드 확률(p)별 평균 말단 수압")
+            _upper_b = [m + s for m, s in zip(bsm["mean_pressures"], bsm["std_pressures"])]
+            _lower_b = [m - s for m, s in zip(bsm["mean_pressures"], bsm["std_pressures"])]
+
+            fig_bern = go.Figure()
+            fig_bern.add_trace(go.Scatter(
+                x=bsm["p_values"], y=_upper_b, mode="lines", line=dict(width=0),
+                showlegend=False, hoverinfo="skip",
+            ))
+            fig_bern.add_trace(go.Scatter(
+                x=bsm["p_values"], y=_lower_b, mode="lines", line=dict(width=0),
+                fill="tonexty", fillcolor="rgba(99,110,250,0.15)",
+                name="평균 +/- 1 표준편차",
+            ))
+            fig_bern.add_trace(go.Scatter(
+                x=bsm["p_values"], y=bsm["mean_pressures"],
+                name="평균 말단 수압", mode="lines+markers",
+                line=dict(color="#636EFA", width=3), marker=dict(size=8),
+            ))
+            fig_bern.add_trace(go.Scatter(
+                x=bsm["p_values"], y=bsm["min_pressures"],
+                name="최솟값", mode="lines+markers",
+                line=dict(color="#EF553B", dash="dot"), marker=dict(size=5),
+            ))
+            fig_bern.add_trace(go.Scatter(
+                x=bsm["p_values"], y=bsm["max_pressures"],
+                name="최댓값", mode="lines+markers",
+                line=dict(color="#00CC96", dash="dot"), marker=dict(size=5),
+            ))
+            fig_bern.add_hline(
+                y=MIN_TERMINAL_PRESSURE_MPA, line_dash="dash",
+                line_color="orange", line_width=2,
+                annotation_text=f"최소 기준 {MIN_TERMINAL_PRESSURE_MPA} MPa",
+            )
+            fig_bern.update_layout(
+                xaxis_title="비드 존재 확률 (p_b)",
+                yaxis_title="말단 수압 (MPa)",
+                template="plotly_white", height=500,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                font=dict(family="Arial", size=13),
+            )
+            st.plotly_chart(fig_bern, use_container_width=True)
+
+            # ── 차트 2: Pf 변화 ──
+            st.markdown("#### 비드 확률(p)별 규정 미달 확률 (Pf)")
+            fig_pf_b = go.Figure()
+            fig_pf_b.add_trace(go.Scatter(
+                x=bsm["p_values"], y=bsm["pf_percents"],
+                name="규정 미달 확률 (%)", mode="lines+markers",
+                line=dict(color="#EF553B", width=3), marker=dict(size=8),
+                fill="tozeroy", fillcolor="rgba(239,85,59,0.1)",
+            ))
+            fig_pf_b.update_layout(
+                xaxis_title="비드 존재 확률 (p_b)",
+                yaxis_title="규정 미달 확률 (%)",
+                template="plotly_white", height=400,
+                font=dict(family="Arial", size=13),
+            )
+            st.plotly_chart(fig_pf_b, use_container_width=True)
+
+            # ── 차트 3: 기대 비드 수 vs 실측 ──
+            st.markdown("#### 비드 확률(p)별 기대/실측 비드 개수")
+            fig_cnt_b = go.Figure()
+            fig_cnt_b.add_trace(go.Bar(
+                x=[f"p={p:.2f}" for p in bsm["p_values"]],
+                y=bsm["expected_bead_counts"], name="기대 비드 수 (n x p)",
+                marker_color="rgba(99,110,250,0.6)",
+            ))
+            fig_cnt_b.add_trace(go.Bar(
+                x=[f"p={p:.2f}" for p in bsm["p_values"]],
+                y=bsm["mean_bead_counts"], name="실측 평균 비드 수",
+                marker_color="rgba(239,85,59,0.6)",
+            ))
+            fig_cnt_b.update_layout(
+                barmode="group", template="plotly_white", height=400,
+                yaxis_title="비드 개수",
+                font=dict(family="Arial", size=13),
+            )
+            st.plotly_chart(fig_cnt_b, use_container_width=True)
+
+            # ── 데이터 테이블 ──
+            st.markdown("#### 요약 테이블")
+            df_bern = pd.DataFrame({
+                "p (비드 확률)": bsm["p_values"],
+                "기대 비드 수": [f"{v:.1f}" for v in bsm["expected_bead_counts"]],
+                "실측 비드 수": [f"{v:.1f}" for v in bsm["mean_bead_counts"]],
+                "평균 수압 (MPa)": [f"{v:.4f}" for v in bsm["mean_pressures"]],
+                "표준편차 (MPa)": [f"{v:.6f}" for v in bsm["std_pressures"]],
+                "최솟값 (MPa)": [f"{v:.4f}" for v in bsm["min_pressures"]],
+                "최댓값 (MPa)": [f"{v:.4f}" for v in bsm["max_pressures"]],
+                "규정 미달 Pf (%)": [f"{v:.2f}" for v in bsm["pf_percents"]],
+                "판정": ["PASS" if pf == 0 else "FAIL" for pf in bsm["pf_percents"]],
+            })
+            st.dataframe(df_bern, use_container_width=True, hide_index=True)
+
+            # ── 다운로드: Excel ──
+            def gen_bernoulli_excel() -> bytes:
+                _buf = io.BytesIO()
+                with pd.ExcelWriter(_buf, engine="openpyxl") as _w:
+                    # Sheet 1: 요약
+                    pd.DataFrame({
+                        "p (비드 확률)": bsm["p_values"],
+                        "기대 비드 수": bsm["expected_bead_counts"],
+                        "실측 비드 수": bsm["mean_bead_counts"],
+                        "평균 수압 (MPa)": bsm["mean_pressures"],
+                        "표준편차 (MPa)": bsm["std_pressures"],
+                        "최솟값 (MPa)": bsm["min_pressures"],
+                        "최댓값 (MPa)": bsm["max_pressures"],
+                        "규정 미달 Pf (%)": bsm["pf_percents"],
+                    }).to_excel(_w, sheet_name="Bernoulli 요약", index=False)
+
+                    # Sheet 2~N: 각 p별 상세 (누적 통계 포함)
+                    for _idx, _p_val in enumerate(bsm["p_values"]):
+                        _res_i = br["results"][_idx]
+                        _tp = np.array(_res_i["terminal_pressures"])
+                        _n = len(_tp)
+                        _cm = np.cumsum(_tp) / np.arange(1, _n + 1)
+                        _cs = np.array([float(np.std(_tp[:j+1], ddof=1)) if j > 0 else 0.0 for j in range(_n)])
+                        _cmin = np.minimum.accumulate(_tp)
+                        _cmax = np.maximum.accumulate(_tp)
+                        _cpf = np.cumsum(_tp < MIN_TERMINAL_PRESSURE_MPA) / np.arange(1, _n + 1) * 100.0
+
+                        pd.DataFrame({
+                            "Trial": range(1, _n + 1),
+                            "말단 수압 (MPa)": _tp,
+                            "비드 개수": _res_i["bead_counts"],
+                            "누적 평균 (MPa)": _cm,
+                            "누적 표준편차 (MPa)": _cs,
+                            "누적 최솟값 (MPa)": _cmin,
+                            "누적 최댓값 (MPa)": _cmax,
+                            "규정 미달 확률 (%)": _cpf,
+                        }).to_excel(_w, sheet_name=f"p={_p_val:.2f}", index=False)
+
+                    # 입력 파라미터 시트
+                    pd.DataFrame([{
+                        "토폴로지": topology_key,
+                        "가지배관 수": num_branches,
+                        "가지배관당 헤드 수": heads_per_branch,
+                        "비드 높이 (mm)": bead_height,
+                        "입구 압력 (MPa)": inlet_pressure,
+                        "설계 유량 (LPM)": design_flow,
+                        "가지배관당 용접 비드": beads_per_branch,
+                        "MC 반복 횟수": br["n_iterations"],
+                    }]).to_excel(_w, sheet_name="입력 파라미터", index=False)
+
+                return _buf.getvalue()
+
+            # ── 다운로드: DOCX ──
+            def gen_bernoulli_docx() -> bytes:
+                from datetime import datetime
+                now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+                _doc = Document()
+                _style = _doc.styles["Normal"]
+                _style.font.size = Pt(10)
+                _style.paragraph_format.space_after = Pt(4)
+                _style.paragraph_format.line_spacing = 1.3
+                _navy = RGBColor(0x1A, 0x3C, 0x6E)
+
+                def _h(text, lv=1):
+                    _hd = _doc.add_heading(text, level=lv)
+                    for _r in _hd.runs:
+                        _r.font.color.rgb = _navy
+                    return _hd
+
+                def _tbl(headers, rows):
+                    t = _doc.add_table(rows=1 + len(rows), cols=len(headers))
+                    t.style = "Table Grid"
+                    t.alignment = WD_TABLE_ALIGNMENT.CENTER
+                    for j, h in enumerate(headers):
+                        c = t.rows[0].cells[j]
+                        c.text = ""
+                        p = c.paragraphs[0]
+                        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        r = p.add_run(h)
+                        r.bold = True
+                        r.font.size = Pt(9)
+                        r.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+                        tc = c._tc
+                        tcPr = tc.get_or_add_tcPr()
+                        shading = tcPr.makeelement(qn("w:shd"), {
+                            qn("w:fill"): "1A3C6E", qn("w:val"): "clear"})
+                        tcPr.append(shading)
+                    for i, row in enumerate(rows):
+                        for j, val in enumerate(row):
+                            c = t.rows[i + 1].cells[j]
+                            c.text = ""
+                            p = c.paragraphs[0]
+                            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                            r = p.add_run(str(val))
+                            r.font.size = Pt(9)
+                    return t
+
+                # 표지
+                _title = _doc.add_heading("FiPLSim Bernoulli MC Analysis Report", level=0)
+                _title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                for _r in _title.runs:
+                    _r.font.color.rgb = _navy
+                _doc.add_paragraph()
+                _sub = _doc.add_paragraph()
+                _sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                _sr = _sub.add_run(
+                    "베르누이 몬테카를로 시뮬레이션 결과 리포트\n"
+                    f"생성: {now_str}"
+                )
+                _sr.font.size = Pt(11)
+                _sr.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
+                _doc.add_page_break()
+
+                # 1. 설정
+                _h("1. 시뮬레이션 설정", 1)
+                _tbl(["항목", "값"], [
+                    ("배관망 토폴로지", topology_key),
+                    ("가지배관 수 x 헤드 수", f"{num_branches} x {heads_per_branch} = {total_fittings_bern}개"),
+                    ("비드 높이", f"{bead_height} mm"),
+                    ("입구 압력", f"{inlet_pressure} MPa"),
+                    ("설계 유량", f"{design_flow} LPM"),
+                    ("가지배관당 용접 비드", f"{beads_per_branch}개"),
+                    ("MC 반복 횟수", f"{br['n_iterations']}회"),
+                    ("분석 p 수준", f"{len(bsm['p_values'])}개: {bsm['p_values']}"),
+                ])
+
+                # 2. 요약 테이블
+                _doc.add_paragraph()
+                _h("2. 비드 확률별 통계 요약", 1)
+                _s_rows = []
+                for i in range(len(bsm["p_values"])):
+                    _s_rows.append((
+                        f"{bsm['p_values'][i]:.2f}",
+                        f"{bsm['expected_bead_counts'][i]:.1f}",
+                        f"{bsm['mean_bead_counts'][i]:.1f}",
+                        f"{bsm['mean_pressures'][i]:.4f}",
+                        f"{bsm['std_pressures'][i]:.6f}",
+                        f"{bsm['min_pressures'][i]:.4f}",
+                        f"{bsm['max_pressures'][i]:.4f}",
+                        f"{bsm['pf_percents'][i]:.2f}",
+                    ))
+                _tbl(["p_b", "기대비드", "실측비드", "평균(MPa)",
+                      "표준편차", "최솟값", "최댓값", "Pf(%)"], _s_rows)
+
+                # 3. 그래프 삽입
+                try:
+                    _png1 = fig_bern.to_image(format="png", width=1200, height=600, scale=2, engine="kaleido")
+                    _doc.add_paragraph()
+                    _h("3. 비드 확률별 평균 말단 수압 곡선", 1)
+                    _doc.add_picture(io.BytesIO(_png1), width=Inches(6.0))
+                    _doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                except Exception:
+                    _doc.add_paragraph()
+                    _h("3. 비드 확률별 평균 말단 수압 곡선", 1)
+                    _doc.add_paragraph("(차트 이미지 생성 실패 — kaleido 패키지 필요)")
+
+                try:
+                    _png2 = fig_pf_b.to_image(format="png", width=1200, height=500, scale=2, engine="kaleido")
+                    _doc.add_paragraph()
+                    _h("4. 규정 미달 확률 변화", 1)
+                    _doc.add_picture(io.BytesIO(_png2), width=Inches(6.0))
+                    _doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                except Exception:
+                    _doc.add_paragraph()
+                    _h("4. 규정 미달 확률 변화", 1)
+                    _doc.add_paragraph("(차트 이미지 생성 실패 — kaleido 패키지 필요)")
+
+                # 푸터
+                _doc.add_paragraph()
+                _ft = _doc.add_paragraph()
+                _ft.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                _fr = _ft.add_run(f"FiPLSim Bernoulli MC Report | {now_str}")
+                _fr.font.size = Pt(8)
+                _fr.font.color.rgb = RGBColor(0x99, 0x99, 0x99)
+
+                _buf = io.BytesIO()
+                _doc.save(_buf)
+                return _buf.getvalue()
+
+            st.markdown("---")
+            st.markdown("#### 다운로드")
+            dc_b1, dc_b2 = st.columns(2)
+            with dc_b1:
+                st.download_button(
+                    ":material/download: 베르누이 MC Excel",
+                    gen_bernoulli_excel(),
+                    "FiPLSim_Bernoulli_MC.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                )
+            with dc_b2:
+                st.download_button(
+                    ":material/download: 베르누이 MC 리포트 (DOCX)",
+                    gen_bernoulli_docx(),
+                    "FiPLSim_Bernoulli_MC_리포트.docx",
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    use_container_width=True,
+                )
 
 else:
     # ── 초기 안내 화면 ──

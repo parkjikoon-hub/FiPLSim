@@ -31,3 +31,18 @@ desktop.ini
 *.tmp
 *.bak
 *.log
+
+# Claude Code
+.agent/
+.claude/
+
+# MC simulation results (large per-trial CSV — regenerate via scripts)
+# Keep summary CSVs and Excel files, ignore large trial-level data
+MC_Results/MC_bead*.csv
+MC_Results/*.zip
+MC_Bernoulli_Results/MC_Bernoulli_p*.csv
+MC_Bernoulli_Results/*.zip
+MC_Bernoulli_Batch/Bernoulli_Q=*.csv
+MC_Bernoulli_Batch/*.zip
+MC_Bernoulli_Batch_Bead0/Bernoulli_Q=*.csv
+MC_Bernoulli_Batch_Bead0/*.zip

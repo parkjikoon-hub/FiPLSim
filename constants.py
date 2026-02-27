@@ -150,6 +150,14 @@ DEFAULT_MIN_DEFECTS = 1
 DEFAULT_MAX_DEFECTS = 3
 
 # ──────────────────────────────────────────────
+# ? 베르누이 몬테카를로 기본값
+# ──────────────────────────────────────────────
+DEFAULT_BERNOULLI_P_VALUES = [0.1, 0.3, 0.5, 0.7, 0.9]
+DEFAULT_BERNOULLI_MC_ITERATIONS = 1000
+BERNOULLI_P_MIN = 0.01
+BERNOULLI_P_MAX = 0.99
+
+# ──────────────────────────────────────────────
 # ? 경제성 분석 기본값
 # ──────────────────────────────────────────────
 DEFAULT_OPERATING_HOURS_PER_YEAR = 2000.0
