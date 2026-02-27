@@ -5,4 +5,4 @@ pandas>=2.0.0
 plotly>=5.18.0
 openpyxl>=3.1.0
 python-docx>=0.8.11
-kaleido>=0.2.1
+kaleido==0.2.1
