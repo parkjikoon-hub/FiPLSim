@@ -17,6 +17,7 @@ from constants import (
     DEFAULT_BRANCH_SPACING_M, DEFAULT_HEAD_SPACING_M,
     MAX_BRANCHES, MAX_HEADS_PER_BRANCH,
     DEFAULT_BEADS_PER_BRANCH, MAX_BEADS_PER_BRANCH,
+    DEFAULT_SUPPLY_PIPE_SIZE,
     auto_pipe_size, auto_cross_main_size, get_inner_diameter_m,
 )
 from hydraulics import (
@@ -458,14 +459,20 @@ def _calculate_branch_profile(
 def calculate_dynamic_system(
     system: DynamicSystem,
     K3_val: float = K3,
+    equipment_k_factors: Optional[dict] = None,
+    supply_pipe_size: str = DEFAULT_SUPPLY_PIPE_SIZE,
 ) -> dict:
     """
     ! 전체 동적 시스템 압력 계산
 
     알고리즘:
+    0. (신규) 공급배관 밸브/기기류 국부 손실 차감
     1. 교차배관 구간별 손실 누적 → 각 가지배관 분기점 압력 산출
     2. 각 가지배관별 압력 프로파일 계산
     3. 최악 가지배관 (최저 말단 압력) 식별
+
+    equipment_k_factors : {"밸브이름": {"K": float, "qty": int}, ...} 또는 None
+    supply_pipe_size    : 공급배관(라이저) 구경 (기본 "100A")
 
     반환:
         branch_inlet_pressures : 각 가지배관 분기점 압력
@@ -474,16 +481,37 @@ def calculate_dynamic_system(
         worst_branch_index     : 최저 말단 압력 가지배관 인덱스
         worst_terminal_mpa     : 최저 말단 압력
         all_terminal_pressures : 모든 가지배관의 말단 압력 리스트
+        equipment_loss_mpa     : 밸브/기기류 총 손실 (MPa)
+        equipment_loss_details : 각 밸브별 손실 상세
     """
     n_branches = system.num_branches
     branch_flow = system.total_flow_lpm / n_branches
+
+    # ── Step 0: 밸브/기기류 국부 손실 계산 (공급배관 라이저) ──
+    equipment_loss_mpa = 0.0
+    equipment_loss_details = []
+    if equipment_k_factors:
+        supply_id_m = get_inner_diameter_m(supply_pipe_size)
+        V_supply = velocity_from_flow(system.total_flow_lpm, supply_id_m)
+        for name, info in equipment_k_factors.items():
+            K_val = info["K"]
+            qty = info.get("qty", 1)
+            single_loss = head_to_mpa(minor_loss(K_val, V_supply))
+            total_loss = single_loss * qty
+            equipment_loss_mpa += total_loss
+            equipment_loss_details.append({
+                "name": name,
+                "K": K_val,
+                "qty": qty,
+                "loss_mpa": round(total_loss, 6),
+            })
 
     # ── Step 1: 교차배관 손실 계산 ──
     cross_main_id_m = get_inner_diameter_m(system.cross_main_size)
     branch_inlet_pressures = []
     cross_main_losses = []
     cm_cumulative_loss = 0.0
-    current_cm_pressure = system.inlet_pressure_mpa
+    current_cm_pressure = system.inlet_pressure_mpa - equipment_loss_mpa
 
     for i in range(n_branches):
         seg = system.cross_main_segments[i]
@@ -535,6 +563,8 @@ def calculate_dynamic_system(
         "all_terminal_pressures": all_terminal_pressures,
         "total_heads": system.num_branches * system.heads_per_branch,
         "cross_main_size": system.cross_main_size,
+        "equipment_loss_mpa": equipment_loss_mpa,
+        "equipment_loss_details": equipment_loss_details,
     }
 
 
@@ -555,6 +585,8 @@ def compare_dynamic_cases(
     K2_val: float = K2,
     K3_val: float = K3,
     beads_per_branch: int = 0,
+    equipment_k_factors: Optional[dict] = None,
+    supply_pipe_size: str = DEFAULT_SUPPLY_PIPE_SIZE,
 ) -> dict:
     """
     ! 동적 시스템에서 Case A(기존) vs Case B(신기술) 비교
@@ -592,8 +624,8 @@ def compare_dynamic_cases(
         **common,
     )
 
-    result_A = calculate_dynamic_system(sys_A, K3_val)
-    result_B = calculate_dynamic_system(sys_B, K3_val)
+    result_A = calculate_dynamic_system(sys_A, K3_val, equipment_k_factors, supply_pipe_size)
+    result_B = calculate_dynamic_system(sys_B, K3_val, equipment_k_factors, supply_pipe_size)
 
     term_A = result_A["worst_terminal_mpa"]
     term_B = result_B["worst_terminal_mpa"]
@@ -837,6 +869,8 @@ def compare_dynamic_cases_with_topology(
     K3_val: float = K3,
     beads_per_branch: int = 0,
     relaxation: float = 0.5,
+    equipment_k_factors: Optional[dict] = None,
+    supply_pipe_size: str = DEFAULT_SUPPLY_PIPE_SIZE,
 ) -> dict:
     """
     ! 토폴로지(Tree/Grid) 분기가 있는 Case A vs B 비교
@@ -859,6 +893,8 @@ def compare_dynamic_cases_with_topology(
             K2_val=K2_val,
             K3_val=K3_val,
             beads_per_branch=beads_per_branch,
+            equipment_k_factors=equipment_k_factors,
+            supply_pipe_size=supply_pipe_size,
         )
 
     # * Grid 모드: Hardy-Cross 기반 비교
@@ -885,12 +921,16 @@ def compare_dynamic_cases_with_topology(
         bead_height_for_weld_mm=bead_height_existing,
         rng=None,
         relaxation=relaxation,
+        equipment_k_factors=equipment_k_factors,
+        supply_pipe_size=supply_pipe_size,
         **common,
     )
     result_B = run_grid_system(
         bead_heights_2d=beads_B,
         beads_per_branch=0,
         relaxation=relaxation,
+        equipment_k_factors=equipment_k_factors,
+        supply_pipe_size=supply_pipe_size,
         **common,
     )
 

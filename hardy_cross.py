@@ -15,6 +15,7 @@ from constants import (
     DEFAULT_BRANCH_SPACING_M, DEFAULT_HEAD_SPACING_M,
     DEFAULT_INLET_PRESSURE_MPA, DEFAULT_TOTAL_FLOW_LPM,
     DEFAULT_BEADS_PER_BRANCH, MAX_BEADS_PER_BRANCH,
+    DEFAULT_SUPPLY_PIPE_SIZE,
     auto_pipe_size, auto_cross_main_size, get_inner_diameter_m,
 )
 from hydraulics import (
@@ -635,6 +636,8 @@ def calculate_grid_pressures(
     K1_base: float = K1_BASE,
     K3_val: float = K3,
     hc_result: Optional[dict] = None,
+    equipment_k_factors: Optional[dict] = None,
+    supply_pipe_size: str = DEFAULT_SUPPLY_PIPE_SIZE,
 ) -> dict:
     """
     ! Hardy-Cross 수렴 후 확정된 유량으로 모든 노드 압력 및 가지배관 프로파일 계산
@@ -656,10 +659,29 @@ def calculate_grid_pressures(
         node_adj[p.start_node_id].append((p.id, +1))  # 정방향
         node_adj[p.end_node_id].append((p.id, -1))     # 역방향
 
+    # ── Step 1.5: 밸브/기기류 국부 손실 계산 (공급배관 라이저) ──
+    equipment_loss_mpa = 0.0
+    equipment_loss_details = []
+    if equipment_k_factors:
+        supply_id_m = get_inner_diameter_m(supply_pipe_size)
+        V_supply = velocity_from_flow(network.total_flow_lpm, supply_id_m)
+        for name, info in equipment_k_factors.items():
+            K_val = info["K"]
+            qty = info.get("qty", 1)
+            single_loss = head_to_mpa(minor_loss(K_val, V_supply))
+            total_loss = single_loss * qty
+            equipment_loss_mpa += total_loss
+            equipment_loss_details.append({
+                "name": name,
+                "K": K_val,
+                "qty": qty,
+                "loss_mpa": round(total_loss, 6),
+            })
+
     # ── Step 2: BFS로 노드 압력 계산 ──
     node_pressures = {}
     inlet_id = network.inlet_node_id
-    node_pressures[inlet_id] = network.inlet_pressure_mpa
+    node_pressures[inlet_id] = network.inlet_pressure_mpa - equipment_loss_mpa
 
     visited = {inlet_id}
     queue = [inlet_id]
@@ -802,6 +824,8 @@ def calculate_grid_pressures(
         "all_terminal_pressures": all_terminal_pressures,
         "total_heads": network.num_branches * network.heads_per_branch,
         "cross_main_size": network.cross_main_size,
+        "equipment_loss_mpa": equipment_loss_mpa,
+        "equipment_loss_details": equipment_loss_details,
         # * Grid 전용 필드
         "topology": "grid",
         "node_data": node_data,
@@ -933,6 +957,8 @@ def run_grid_system(
     weld_beads_2d: Optional[List[List[WeldBead]]] = None,
     rng=None,
     relaxation: float = HC_RELAXATION_FACTOR,
+    equipment_k_factors: Optional[dict] = None,
+    supply_pipe_size: str = DEFAULT_SUPPLY_PIPE_SIZE,
 ) -> dict:
     """
     ! Grid 시스템 생성 → Hardy-Cross 솔버 → 압력 계산 — 원스텝 호출
@@ -963,4 +989,6 @@ def run_grid_system(
 
     return calculate_grid_pressures(
         network, K1_base=K1_base, K3_val=K3_val, hc_result=hc_result,
+        equipment_k_factors=equipment_k_factors,
+        supply_pipe_size=supply_pipe_size,
     )

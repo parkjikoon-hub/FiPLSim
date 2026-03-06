@@ -13,7 +13,7 @@ from plotly.subplots import make_subplots
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from constants import (
-    PUMP_DATABASE, FITTING_SPACING_OPTIONS,
+    PUMP_DATABASE, FITTING_SPACING_OPTIONS, PIPE_DIMENSIONS,
     DEFAULT_INLET_PRESSURE_MPA, DEFAULT_TOTAL_FLOW_LPM,
     DEFAULT_FITTING_SPACING_M, DEFAULT_BEAD_HEIGHT_MM,
     MIN_TERMINAL_PRESSURE_MPA, MAX_TERMINAL_PRESSURE_MPA,
@@ -26,6 +26,7 @@ from constants import (
     DEFAULT_BEADS_PER_BRANCH, MAX_BEADS_PER_BRANCH,
     K1_BASE, K2, K3,
     HC_RELAXATION_FACTOR, HC_RELAXATION_MIN, HC_RELAXATION_MAX,
+    DEFAULT_EQUIPMENT_K_FACTORS, DEFAULT_SUPPLY_PIPE_SIZE,
 )
 from pipe_network import (
     compare_dynamic_cases, compare_dynamic_cases_with_topology,
@@ -308,6 +309,50 @@ if beads_per_branch > 0:
         f"{num_branches}개 = 전체 **{total_weld_beads}개**"
     )
 
+# ── 3.5. 밸브/기기류 국부 손실 ──
+st.sidebar.header(":material/valve: 추가 기기 손실 (밸브류)")
+st.sidebar.caption(
+    "수직 라이저(공급배관)에 설치되는 밸브/기기류의 국부 손실입니다. "
+    "체크박스를 켜면 해당 밸브의 K값 손실이 시뮬레이션에 반영됩니다."
+)
+
+# 공급배관 구경 선택
+supply_pipe_options = [k for k in PIPE_DIMENSIONS.keys() if int(k.replace("A","")) >= 50]
+supply_pipe_size = st.sidebar.selectbox(
+    "공급배관(라이저) 구경",
+    supply_pipe_options,
+    index=supply_pipe_options.index(DEFAULT_SUPPLY_PIPE_SIZE),
+    help="밸브가 설치된 수직 라이저 배관의 구경입니다. 유속 계산에 사용됩니다.",
+)
+
+with st.sidebar.expander("밸브류 ON/OFF 및 K값 설정", expanded=False):
+    equipment_k_factors = {}
+    for name, info in DEFAULT_EQUIPMENT_K_FACTORS.items():
+        col_chk, col_k, col_q = st.columns([2, 1.2, 0.8])
+        with col_chk:
+            enabled = st.checkbox(name, value=True, key=f"equip_{name}")
+        with col_k:
+            k_val = st.number_input(
+                "K", min_value=0.0, max_value=20.0,
+                value=info["K"], step=0.05, key=f"equip_K_{name}",
+                label_visibility="collapsed",
+            )
+        with col_q:
+            qty = st.number_input(
+                "qty", min_value=0, max_value=10,
+                value=info["qty"], step=1, key=f"equip_qty_{name}",
+                label_visibility="collapsed",
+            )
+        if enabled and qty > 0:
+            equipment_k_factors[name] = {"K": k_val, "qty": qty}
+
+    # 합산 K값 표시
+    total_equiv_K = sum(v["K"] * v["qty"] for v in equipment_k_factors.values())
+    st.caption(f"**선택된 밸브 등가 K값 합계**: {total_equiv_K:.2f}")
+
+if not equipment_k_factors:
+    equipment_k_factors = None
+
 # ── 4. 펌프 선택 ──
 st.sidebar.header(":material/water_pump: 펌프 선택")
 
@@ -373,6 +418,8 @@ if run_button or "results" in st.session_state:
                     bead_height_new=0.0,
                     beads_per_branch=beads_per_branch,
                     relaxation=hc_relaxation,
+                    equipment_k_factors=equipment_k_factors,
+                    supply_pipe_size=supply_pipe_size,
                 )
 
                 # * 안전장치 4: Grid 모드 수렴 실패 / 발산 감지 시 에러 메시지
@@ -441,6 +488,8 @@ if run_button or "results" in st.session_state:
                     beads_per_branch=beads_per_branch,
                     topology=topology_key,
                     relaxation=hc_relaxation,
+                    equipment_k_factors=equipment_k_factors,
+                    supply_pipe_size=supply_pipe_size,
                 )
 
             with st.spinner("민감도 분석 중..."):
@@ -453,6 +502,8 @@ if run_button or "results" in st.session_state:
                     beads_per_branch=beads_per_branch,
                     topology=topology_key,
                     relaxation=hc_relaxation,
+                    equipment_k_factors=equipment_k_factors,
+                    supply_pipe_size=supply_pipe_size,
                 )
 
             st.session_state["results"] = {
@@ -471,6 +522,8 @@ if run_button or "results" in st.session_state:
                     "beads_per_branch": beads_per_branch,
                     "pump_model": pump_model,
                     "topology": topology_key,
+                    "equipment_k_factors": equipment_k_factors,
+                    "supply_pipe_size": supply_pipe_size,
                 },
             }
 
@@ -502,6 +555,10 @@ if run_button or "results" in st.session_state:
     )
     if bpb_display > 0:
         sys_info += f" | 직관 용접 비드: 가지배관당 **{bpb_display}개**"
+    # * 밸브/기기류 손실 정보
+    equip_loss_A = case_results.get("system_A", {}).get("equipment_loss_mpa", 0.0)
+    if equip_loss_A > 0:
+        sys_info += f" | 밸브류 손실: **{equip_loss_A * 1000:.1f} kPa**"
     # * Grid 모드 수렴 정보 표시
     if topo_display == "grid" and "system_A" in case_results:
         sys_A_res = case_results["system_A"]
@@ -580,6 +637,32 @@ if run_button or "results" in st.session_state:
     # ═══ Tab 1: 압력 프로파일 ═══
     with tab1:
         st.subheader("최악 가지배관 — 전 구간 누적 압력 프로파일")
+
+        # * 밸브/기기류 손실 상세 분해 표시
+        equip_details_A = case_results.get("system_A", {}).get("equipment_loss_details", [])
+        if equip_details_A:
+            with st.expander("밸브/기기류 국부 손실 상세 분해", expanded=True):
+                eq_rows = []
+                for d in equip_details_A:
+                    eq_rows.append({
+                        "부속류": d["name"],
+                        "K값": d["K"],
+                        "수량": d["qty"],
+                        "손실 (kPa)": round(d["loss_mpa"] * 1000, 2),
+                    })
+                eq_total = sum(r["손실 (kPa)"] for r in eq_rows)
+                eq_rows.append({
+                    "부속류": "합계",
+                    "K값": sum(d["K"] * d["qty"] for d in equip_details_A),
+                    "수량": "",
+                    "손실 (kPa)": round(eq_total, 2),
+                })
+                st.dataframe(pd.DataFrame(eq_rows), use_container_width=True, hide_index=True)
+                supply_ps = params.get("supply_pipe_size", "100A")
+                st.caption(
+                    f"공급배관(라이저) 구경: **{supply_ps}** | "
+                    f"총 밸브 손실: **{eq_total:.2f} kPa** ({eq_total/1000:.4f} MPa)"
+                )
 
         worst_A = case_results["case_A"]
         worst_B = case_results["case_B"]
@@ -2196,6 +2279,8 @@ if run_button or "results" in st.session_state:
                     topology=topology_key,
                     relaxation=hc_relaxation,
                     mc_iterations=mc_iterations,
+                    equipment_k_factors=equipment_k_factors,
+                    supply_pipe_size=supply_pipe_size,
                 )
             st.session_state["sweep_results"] = sweep_res
             st.success(f"스캔 완료! {len(sweep_res['sweep_values'])}개 케이스 분석됨")
@@ -2771,6 +2856,8 @@ if run_button or "results" in st.session_state:
                     beads_per_branch=beads_per_branch,
                     topology=topology_key,
                     relaxation=hc_relaxation,
+                    equipment_k_factors=equipment_k_factors,
+                    supply_pipe_size=supply_pipe_size,
                 )
             st.session_state["bernoulli_results"] = bern_results
             st.success(f"완료! {n_p_levels}개 수준 분석됨")
