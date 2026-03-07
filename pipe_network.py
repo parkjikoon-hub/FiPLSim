@@ -18,6 +18,7 @@ from constants import (
     MAX_BRANCHES, MAX_HEADS_PER_BRANCH,
     DEFAULT_BEADS_PER_BRANCH, MAX_BEADS_PER_BRANCH,
     DEFAULT_SUPPLY_PIPE_SIZE,
+    BRANCH_INLET_CONFIGS, DEFAULT_BRANCH_INLET_CONFIG,
     auto_pipe_size, auto_cross_main_size, get_inner_diameter_m,
 )
 from hydraulics import (
@@ -246,6 +247,7 @@ def generate_dynamic_system(
     bead_height_for_weld_mm: float = 1.5,
     weld_beads_2d: Optional[List[List[WeldBead]]] = None,
     rng=None,
+    branch_inlet_config: Optional[str] = None,
 ) -> DynamicSystem:
     """
     ! 사용자 입력 기반 동적 배관망 자동 생성
@@ -273,12 +275,23 @@ def generate_dynamic_system(
 
     total_heads = num_branches * heads_per_branch
 
+    # * Step 1.5: 가지배관 분기 구조 설정 파싱
+    _cross_main_override = None
+    _first_seg_override = None
+    if branch_inlet_config and branch_inlet_config in BRANCH_INLET_CONFIGS:
+        cfg = BRANCH_INLET_CONFIGS[branch_inlet_config]
+        _cross_main_override = cfg.get("cross_main_override")
+        _first_seg_override = cfg.get("first_segment_override")
+
     # * Step 2: 비드 배열 초기화
     if bead_heights_2d is None:
         bead_heights_2d = [[0.0] * heads_per_branch for _ in range(num_branches)]
 
-    # * Step 3: 교차배관 구경 자동 선정
-    cross_main_size = auto_cross_main_size(total_heads)
+    # * Step 3: 교차배관 구경 선정 (분기 구조 설정에 따라 강제 또는 자동)
+    if _cross_main_override:
+        cross_main_size = _cross_main_override
+    else:
+        cross_main_size = auto_cross_main_size(total_heads)
     cross_main_id_m = get_inner_diameter_m(cross_main_size)
 
     # * Step 4: 각 가지배관으로의 유량 균등 분배
@@ -305,9 +318,12 @@ def generate_dynamic_system(
         pipe_sizes = []
 
         for h in range(heads_per_branch):
-            # 하류 헤드 수 기준 관경 자동 선정
+            # 하류 헤드 수 기준 관경 자동 선정 (첫 세그먼트는 분기 구조에 따라 강제 가능)
             downstream = heads_per_branch - h
-            nom_size = auto_pipe_size(downstream)
+            if h == 0 and _first_seg_override:
+                nom_size = _first_seg_override
+            else:
+                nom_size = auto_pipe_size(downstream)
             pipe_sizes.append(nom_size)
             id_m = get_inner_diameter_m(nom_size)
             id_mm = PIPE_DIMENSIONS[nom_size]["id_mm"]

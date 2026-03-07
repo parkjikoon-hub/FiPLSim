@@ -133,6 +133,31 @@ MAX_BRANCHES = 200                # 최대 허용 가지배관 수
 MAX_HEADS_PER_BRANCH = 50         # 최대 허용 가지배관당 헤드 수
 
 # ──────────────────────────────────────────────
+# ? 가지배관 분기 구조 설정 (3종)
+#   교차배관에서 가지배관으로의 분기 방식 선택
+#   cross_main_override : 교차배관 구경 강제 지정
+#   first_segment_override : 가지배관 첫 번째 세그먼트 구경 강제 지정
+# ──────────────────────────────────────────────
+BRANCH_INLET_CONFIGS = {
+    "80A-50A": {
+        "desc": "교차80A → 50A 직접 분기 (65A 없음)",
+        "cross_main_override": "80A",
+        "first_segment_override": None,
+    },
+    "80A-65A": {
+        "desc": "교차80A → 65A 분기 → 50A 레듀서 연결",
+        "cross_main_override": "80A",
+        "first_segment_override": "65A",
+    },
+    "65A-65A": {
+        "desc": "교차65A → 65A 분기 → 50A 레듀서 연결",
+        "cross_main_override": "65A",
+        "first_segment_override": "65A",
+    },
+}
+DEFAULT_BRANCH_INLET_CONFIG = "80A-50A"
+
+# ──────────────────────────────────────────────
 # ? 용접 비드 국부 손실 파라미터
 #   가지배관 직관 구간 내 무작위 배치되는 용접 비드 개수
 # ──────────────────────────────────────────────
