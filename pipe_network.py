@@ -281,10 +281,12 @@ def generate_dynamic_system(
     # * Step 1.5: 가지배관 분기 구조 설정 파싱
     _cross_main_override = None
     _inlet_pipe = None
+    _inlet_pipe_length = 0.0
     if branch_inlet_config and branch_inlet_config in BRANCH_INLET_CONFIGS:
         cfg = BRANCH_INLET_CONFIGS[branch_inlet_config]
         _cross_main_override = cfg.get("cross_main_override")
         _inlet_pipe = cfg.get("inlet_pipe")
+        _inlet_pipe_length = cfg.get("inlet_pipe_length_m", 0.3)
 
     # * Step 2: 비드 배열 초기화
     if bead_heights_2d is None:
@@ -367,7 +369,7 @@ def generate_dynamic_system(
             pipe_sizes=pipe_sizes,
             weld_beads=branch_beads,
             inlet_pipe_size=_inlet_pipe,
-            inlet_pipe_length_m=head_spacing_m if _inlet_pipe else 0.0,
+            inlet_pipe_length_m=_inlet_pipe_length,
         )
         branches.append(bp)
 
@@ -637,6 +639,7 @@ def compare_dynamic_cases(
     beads_per_branch: int = 0,
     equipment_k_factors: Optional[dict] = None,
     supply_pipe_size: str = DEFAULT_SUPPLY_PIPE_SIZE,
+    branch_inlet_config: str = None,
 ) -> dict:
     """
     ! 동적 시스템에서 Case A(기존) vs Case B(신기술) 비교
@@ -665,12 +668,14 @@ def compare_dynamic_cases(
         beads_per_branch=beads_per_branch,
         bead_height_for_weld_mm=bead_height_existing,
         rng=None,
+        branch_inlet_config=branch_inlet_config,
         **common,
     )
     # * Case B: 신기술 — 비드 없음
     sys_B = generate_dynamic_system(
         bead_heights_2d=beads_B,
         beads_per_branch=0,
+        branch_inlet_config=branch_inlet_config,
         **common,
     )
 
@@ -921,6 +926,7 @@ def compare_dynamic_cases_with_topology(
     relaxation: float = 0.5,
     equipment_k_factors: Optional[dict] = None,
     supply_pipe_size: str = DEFAULT_SUPPLY_PIPE_SIZE,
+    branch_inlet_config: str = None,
 ) -> dict:
     """
     ! 토폴로지(Tree/Grid) 분기가 있는 Case A vs B 비교
@@ -945,6 +951,7 @@ def compare_dynamic_cases_with_topology(
             beads_per_branch=beads_per_branch,
             equipment_k_factors=equipment_k_factors,
             supply_pipe_size=supply_pipe_size,
+            branch_inlet_config=branch_inlet_config,
         )
 
     # * Grid 모드: Hardy-Cross 기반 비교

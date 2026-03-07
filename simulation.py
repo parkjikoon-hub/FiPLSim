@@ -46,6 +46,7 @@ def run_dynamic_monte_carlo(
     relaxation: float = 0.5,
     equipment_k_factors: dict = None,
     supply_pipe_size: str = DEFAULT_SUPPLY_PIPE_SIZE,
+    branch_inlet_config: str = None,
 ) -> dict:
     """
     ! 동적 시스템 몬테카를로: 이음쇠 결함 + 용접 비드 위치 무작위 시뮬레이션
@@ -121,6 +122,7 @@ def run_dynamic_monte_carlo(
                 beads_per_branch=beads_per_branch,
                 bead_height_for_weld_mm=bead_height_mm,
                 rng=rng,
+                branch_inlet_config=branch_inlet_config,
                 **common,
             )
             result = calculate_dynamic_system(system, K3_val,
@@ -171,6 +173,7 @@ def run_bernoulli_monte_carlo(
     relaxation: float = 0.5,
     equipment_k_factors: dict = None,
     supply_pipe_size: str = DEFAULT_SUPPLY_PIPE_SIZE,
+    branch_inlet_config: str = None,
 ) -> dict:
     """
     베르누이 MC: 각 접합부에 독립적 확률 p_bead로 비드 존재 여부 결정.
@@ -228,6 +231,7 @@ def run_bernoulli_monte_carlo(
                 beads_per_branch=beads_per_branch,
                 bead_height_for_weld_mm=bead_height_mm,
                 rng=None,
+                branch_inlet_config=branch_inlet_config,
                 **common,
             )
             result = calculate_dynamic_system(system, K3_val,
@@ -273,6 +277,7 @@ def run_bernoulli_sweep(
     relaxation: float = 0.5,
     equipment_k_factors: dict = None,
     supply_pipe_size: str = DEFAULT_SUPPLY_PIPE_SIZE,
+    branch_inlet_config: str = None,
 ) -> dict:
     """
     여러 p_bead 값을 순회하며 베르누이 MC 실행, 요약 통계 수집.
@@ -302,6 +307,7 @@ def run_bernoulli_sweep(
             relaxation=relaxation,
             equipment_k_factors=equipment_k_factors,
             supply_pipe_size=supply_pipe_size,
+            branch_inlet_config=branch_inlet_config,
         )
         results_list.append(res)
         mean_pressures.append(res["mean_pressure"])
@@ -350,6 +356,7 @@ def run_dynamic_sensitivity(
     relaxation: float = 0.5,
     equipment_k_factors: dict = None,
     supply_pipe_size: str = DEFAULT_SUPPLY_PIPE_SIZE,
+    branch_inlet_config: str = None,
 ) -> dict:
     """
     ! 동적 시스템 민감도 분석
@@ -394,6 +401,7 @@ def run_dynamic_sensitivity(
         sys_base = generate_dynamic_system(
             beads_per_branch=beads_per_branch,
             bead_height_for_weld_mm=bead_height_mm,
+            branch_inlet_config=branch_inlet_config,
             **common,
         )
         res_base = calculate_dynamic_system(sys_base, K3_val,
@@ -432,6 +440,7 @@ def run_dynamic_sensitivity(
                 bead_heights_2d=beads_2d,
                 beads_per_branch=beads_per_branch,
                 bead_height_for_weld_mm=bead_height_mm,
+                branch_inlet_config=branch_inlet_config,
                 **common,
             )
             result = calculate_dynamic_system(system, K3_val,
@@ -481,6 +490,7 @@ def run_variable_sweep(
     mc_iterations: int = DEFAULT_BERNOULLI_MC_ITERATIONS,
     equipment_k_factors: dict = None,
     supply_pipe_size: str = DEFAULT_SUPPLY_PIPE_SIZE,
+    branch_inlet_config: str = None,
 ) -> dict:
     """
     특정 설계 변수를 연속 변화시키며 Case A/B 말단 수압 변화 및 임계점을 탐지.
@@ -515,6 +525,7 @@ def run_variable_sweep(
                     relaxation=relaxation,
                     equipment_k_factors=equipment_k_factors,
                     supply_pipe_size=supply_pipe_size,
+                    branch_inlet_config=branch_inlet_config,
                 )
                 bern_mean.append(bern_res["mean_pressure"])
                 bern_std.append(bern_res["std_pressure"])
@@ -571,6 +582,7 @@ def run_variable_sweep(
                     relaxation=relaxation,
                     equipment_k_factors=equipment_k_factors,
                     supply_pipe_size=supply_pipe_size,
+                    branch_inlet_config=branch_inlet_config,
                 )
                 mc_mean.append(mc_res["mean_pressure"])
                 mc_std.append(mc_res["std_pressure"])
@@ -616,6 +628,7 @@ def run_variable_sweep(
             relaxation=relaxation,
             equipment_k_factors=equipment_k_factors,
             supply_pipe_size=supply_pipe_size,
+            branch_inlet_config=branch_inlet_config,
         )
 
         if sweep_variable == "design_flow":
