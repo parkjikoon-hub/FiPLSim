@@ -136,23 +136,28 @@ MAX_HEADS_PER_BRANCH = 50         # 최대 허용 가지배관당 헤드 수
 # ? 가지배관 분기 구조 설정 (3종)
 #   교차배관에서 가지배관으로의 분기 방식 선택
 #   cross_main_override : 교차배관 구경 강제 지정
-#   first_segment_override : 가지배관 첫 번째 세그먼트 구경 강제 지정
+#   inlet_pipe : 가지배관 입구 배관 구경 (None이면 입구 배관 없이 직접 분기)
+#
+#   구조도:
+#     80A-50A: 교차80A ─[분기]─ 50A(헤드×3) ─ 40A(×2) ─ 32A ─ 25A(×2)
+#     80A-65A: 교차80A ─[분기]─ 65A(입구, 헤드없음) ─ 50A(헤드×3) ─ 40A(×2) ─ 32A ─ 25A(×2)
+#     65A-65A: 교차65A ─[분기]─ 65A(입구, 헤드없음) ─ 50A(헤드×3) ─ 40A(×2) ─ 32A ─ 25A(×2)
 # ──────────────────────────────────────────────
 BRANCH_INLET_CONFIGS = {
     "80A-50A": {
         "desc": "교차80A → 50A 직접 분기 (65A 없음)",
         "cross_main_override": "80A",
-        "first_segment_override": None,
+        "inlet_pipe": None,
     },
     "80A-65A": {
-        "desc": "교차80A → 65A 분기 → 50A 레듀서 연결",
+        "desc": "교차80A → 65A 입구배관 → 50A(헤드3) → 40A → 32A → 25A",
         "cross_main_override": "80A",
-        "first_segment_override": "65A",
+        "inlet_pipe": "65A",
     },
     "65A-65A": {
-        "desc": "교차65A → 65A 분기 → 50A 레듀서 연결",
+        "desc": "교차65A → 65A 입구배관 → 50A(헤드3) → 40A → 32A → 25A",
         "cross_main_override": "65A",
-        "first_segment_override": "65A",
+        "inlet_pipe": "65A",
     },
 }
 DEFAULT_BRANCH_INLET_CONFIG = "80A-50A"

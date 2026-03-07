@@ -188,6 +188,9 @@ class BranchPipe:
     pipe_sizes: List[str] = field(default_factory=list)
     # * 직관 구간 내 용접 비드 목록 (generate_branch_beads로 생성)
     weld_beads: List[WeldBead] = field(default_factory=list)
+    # * 입구 배관 (65A 등, 교차배관→첫 헤드 사이 추가 구간, 헤드 없음)
+    inlet_pipe_size: Optional[str] = None
+    inlet_pipe_length_m: float = 0.0
 
 
 @dataclass
@@ -277,11 +280,11 @@ def generate_dynamic_system(
 
     # * Step 1.5: 가지배관 분기 구조 설정 파싱
     _cross_main_override = None
-    _first_seg_override = None
+    _inlet_pipe = None
     if branch_inlet_config and branch_inlet_config in BRANCH_INLET_CONFIGS:
         cfg = BRANCH_INLET_CONFIGS[branch_inlet_config]
         _cross_main_override = cfg.get("cross_main_override")
-        _first_seg_override = cfg.get("first_segment_override")
+        _inlet_pipe = cfg.get("inlet_pipe")
 
     # * Step 2: 비드 배열 초기화
     if bead_heights_2d is None:
@@ -318,12 +321,9 @@ def generate_dynamic_system(
         pipe_sizes = []
 
         for h in range(heads_per_branch):
-            # 하류 헤드 수 기준 관경 자동 선정 (첫 세그먼트는 분기 구조에 따라 강제 가능)
+            # 하류 헤드 수 기준 관경 자동 선정
             downstream = heads_per_branch - h
-            if h == 0 and _first_seg_override:
-                nom_size = _first_seg_override
-            else:
-                nom_size = auto_pipe_size(downstream)
+            nom_size = auto_pipe_size(downstream)
             pipe_sizes.append(nom_size)
             id_m = get_inner_diameter_m(nom_size)
             id_mm = PIPE_DIMENSIONS[nom_size]["id_mm"]
@@ -366,6 +366,8 @@ def generate_dynamic_system(
             branch_flow_lpm=branch_flow,
             pipe_sizes=pipe_sizes,
             weld_beads=branch_beads,
+            inlet_pipe_size=_inlet_pipe,
+            inlet_pipe_length_m=head_spacing_m if _inlet_pipe else 0.0,
         )
         branches.append(bp)
 
@@ -415,12 +417,30 @@ def _calculate_branch_profile(
     pressures.append(current_p)
     cumulative_loss.append(0.0)
 
-    # * K3 분기 입구 손실
-    first_seg = branch.junctions[0].pipe_segment
-    V_inlet = velocity_from_flow(total_flow, first_seg.inner_diameter_m)
-    K3_loss = head_to_mpa(minor_loss(K3_val, V_inlet))
-    current_p -= K3_loss
-    current_loss += K3_loss
+    # * K3 분기 입구 손실 + 입구 배관 마찰 손실
+    inlet_pipe_friction_mpa = 0.0
+    if branch.inlet_pipe_size:
+        # 입구 배관(예: 65A)이 있는 경우 → 65A 유속으로 K3 + 65A 마찰 손실
+        inlet_id_m = get_inner_diameter_m(branch.inlet_pipe_size)
+        V_inlet = velocity_from_flow(total_flow, inlet_id_m)
+        K3_loss = head_to_mpa(minor_loss(K3_val, V_inlet))
+        current_p -= K3_loss
+        current_loss += K3_loss
+        # 입구 배관 직관 마찰 손실 (Darcy-Weisbach)
+        Re_inlet = reynolds_number(V_inlet, inlet_id_m)
+        f_inlet = friction_factor(Re_inlet, D=inlet_id_m)
+        inlet_pipe_friction_mpa = head_to_mpa(
+            major_loss(f_inlet, branch.inlet_pipe_length_m, inlet_id_m, V_inlet)
+        )
+        current_p -= inlet_pipe_friction_mpa
+        current_loss += inlet_pipe_friction_mpa
+    else:
+        # 입구 배관 없이 직접 분기 → 첫 번째 헤드 구간 유속으로 K3
+        first_seg = branch.junctions[0].pipe_segment
+        V_inlet = velocity_from_flow(total_flow, first_seg.inner_diameter_m)
+        K3_loss = head_to_mpa(minor_loss(K3_val, V_inlet))
+        current_p -= K3_loss
+        current_loss += K3_loss
 
     for i, junc in enumerate(branch.junctions):
         seg = junc.pipe_segment
@@ -478,6 +498,8 @@ def _calculate_branch_profile(
         "cumulative_loss_mpa": cumulative_loss,
         "terminal_pressure_mpa": pressures[-1],
         "K3_loss_mpa": K3_loss,
+        "inlet_pipe_friction_mpa": inlet_pipe_friction_mpa,
+        "inlet_pipe_size": branch.inlet_pipe_size,
         "segment_details": seg_details,
     }
 
