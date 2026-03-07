@@ -376,11 +376,14 @@ def _calculate_branch_profile(
     branch: BranchPipe,
     branch_inlet_pressure_mpa: float,
     K3_val: float = K3,
+    bead_velocity_model: str = "upstream",
 ) -> dict:
     """
     단일 가지배관의 압력 프로파일 계산 (내부 함수)
 
     branch_inlet_pressure_mpa: 교차배관 분기점에서의 압력 (교차배관 손실 반영 후)
+    bead_velocity_model: "upstream" = K_eff × V² (D/D_eff)^4 모델
+                         "constriction" = K_eff × V_eff² (D/D_eff)^8 모델
     """
     n = branch.num_heads
     total_flow = branch.branch_flow_lpm
@@ -411,7 +414,14 @@ def _calculate_branch_profile(
         f = friction_factor(Re, D=seg.inner_diameter_m)
 
         p_major = head_to_mpa(major_loss(f, seg.length_m, seg.inner_diameter_m, V))
-        p_K1 = head_to_mpa(minor_loss(junc.K1_welded, V))
+
+        # * 비드 K1 손실: 속도 기준 선택
+        if bead_velocity_model == "constriction" and junc.bead_height_mm > 0:
+            D_eff_m = seg.inner_diameter_m - 2.0 * junc.bead_height_mm / 1000.0
+            V_bead = velocity_from_flow(segment_flow, D_eff_m) if D_eff_m > 0 else V
+            p_K1 = head_to_mpa(minor_loss(junc.K1_welded, V_bead))
+        else:
+            p_K1 = head_to_mpa(minor_loss(junc.K1_welded, V))
         p_K2 = head_to_mpa(minor_loss(junc.K2_head, V))
 
         # * 직관 구간 내 용접 비드 국부 손실 합산
@@ -461,6 +471,7 @@ def calculate_dynamic_system(
     K3_val: float = K3,
     equipment_k_factors: Optional[dict] = None,
     supply_pipe_size: str = DEFAULT_SUPPLY_PIPE_SIZE,
+    bead_velocity_model: str = "upstream",
 ) -> dict:
     """
     ! 전체 동적 시스템 압력 계산
@@ -545,6 +556,7 @@ def calculate_dynamic_system(
             system.branches[b],
             branch_inlet_pressures[b],
             K3_val,
+            bead_velocity_model=bead_velocity_model,
         )
         branch_profiles.append(profile)
         all_terminal_pressures.append(profile["terminal_pressure_mpa"])
