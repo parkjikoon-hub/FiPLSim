@@ -778,3 +778,83 @@ def run_sensitivity_analysis(
         "critical_point": ranking[0],
         "bead_height_mm": bead_height_mm,
     }
+
+
+# ══════════════════════════════════════════════
+#  2인자 실험계획법: p_bead × h_b → Pf 히트맵
+# ══════════════════════════════════════════════
+
+def run_two_factor_sweep(
+    p_bead_values: list = None,
+    bead_height_values: list = None,
+    n_iterations: int = 1000,
+    num_branches: int = DEFAULT_NUM_BRANCHES,
+    heads_per_branch: int = DEFAULT_HEADS_PER_BRANCH,
+    branch_spacing_m: float = DEFAULT_BRANCH_SPACING_M,
+    head_spacing_m: float = DEFAULT_HEAD_SPACING_M,
+    inlet_pressure_mpa: float = DEFAULT_INLET_PRESSURE_MPA,
+    total_flow_lpm: float = DEFAULT_TOTAL_FLOW_LPM,
+    K1_base: float = K1_BASE,
+    K2_val: float = K2,
+    K3_val: float = K3,
+    beads_per_branch: int = 0,
+    topology: str = "tree",
+    relaxation: float = 0.5,
+    equipment_k_factors: dict = None,
+    supply_pipe_size: str = DEFAULT_SUPPLY_PIPE_SIZE,
+    branch_inlet_config: str = None,
+) -> dict:
+    """
+    2인자 실험계획법: 시공 품질(p_bead)과 비드 높이(h_b)의 교차 영향 분석.
+
+    p_bead (x축): 각 접합부의 비드 존재 확률 (시공 품질)
+    bead_height (y축): 비드 높이 mm (용접 기술 수준)
+    출력: Pf(%) 2D 행렬 + 평균 압력 2D 행렬
+    """
+    if p_bead_values is None:
+        p_bead_values = [0.1, 0.3, 0.5, 0.7, 0.9]
+    if bead_height_values is None:
+        bead_height_values = [0.5, 1.0, 1.5, 2.0, 2.5]
+
+    n_p = len(p_bead_values)
+    n_h = len(bead_height_values)
+    pf_matrix = np.zeros((n_h, n_p))
+    mean_pressure_matrix = np.zeros((n_h, n_p))
+
+    total_runs = n_p * n_h
+    completed = 0
+
+    for j, p_bead in enumerate(p_bead_values):
+        for i, h_b in enumerate(bead_height_values):
+            result = run_bernoulli_monte_carlo(
+                p_bead=p_bead,
+                n_iterations=n_iterations,
+                bead_height_mm=h_b,
+                num_branches=num_branches,
+                heads_per_branch=heads_per_branch,
+                branch_spacing_m=branch_spacing_m,
+                head_spacing_m=head_spacing_m,
+                inlet_pressure_mpa=inlet_pressure_mpa,
+                total_flow_lpm=total_flow_lpm,
+                K1_base=K1_base,
+                K2_val=K2_val,
+                K3_val=K3_val,
+                beads_per_branch=beads_per_branch,
+                topology=topology,
+                relaxation=relaxation,
+                equipment_k_factors=equipment_k_factors,
+                supply_pipe_size=supply_pipe_size,
+                branch_inlet_config=branch_inlet_config,
+            )
+            pf_matrix[i, j] = result["p_below_threshold"] * 100.0
+            mean_pressure_matrix[i, j] = result["mean_pressure"]
+            completed += 1
+
+    return {
+        "p_bead_values": p_bead_values,
+        "bead_height_values": bead_height_values,
+        "pf_matrix": pf_matrix,
+        "mean_pressure_matrix": mean_pressure_matrix,
+        "n_iterations": n_iterations,
+        "total_runs": total_runs,
+    }

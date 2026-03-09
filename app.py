@@ -17,6 +17,7 @@ from constants import (
     DEFAULT_INLET_PRESSURE_MPA, DEFAULT_TOTAL_FLOW_LPM,
     DEFAULT_FITTING_SPACING_M, DEFAULT_BEAD_HEIGHT_MM,
     MIN_TERMINAL_PRESSURE_MPA, MAX_TERMINAL_PRESSURE_MPA,
+    MIN_HEAD_FLOW_LPM,
     MAX_VELOCITY_BRANCH_MS, MAX_VELOCITY_OTHER_MS,
     DEFAULT_MC_ITERATIONS, DEFAULT_MIN_DEFECTS, DEFAULT_MAX_DEFECTS,
     DEFAULT_OPERATING_HOURS_PER_YEAR, DEFAULT_ELECTRICITY_RATE_KRW,
@@ -37,7 +38,7 @@ from pump import (
 )
 from simulation import (
     run_dynamic_monte_carlo, run_dynamic_sensitivity, run_variable_sweep,
-    run_bernoulli_monte_carlo, run_bernoulli_sweep,
+    run_bernoulli_monte_carlo, run_bernoulli_sweep, run_two_factor_sweep,
 )
 
 
@@ -279,11 +280,34 @@ inlet_pressure = st.sidebar.slider(
     help="교차배관(Cross Main) 입구의 설계 압력입니다.",
 )
 
-design_flow = st.sidebar.slider(
-    "전체 설계 유량 (LPM)",
-    min_value=100, max_value=3000, value=int(DEFAULT_TOTAL_FLOW_LPM), step=50,
-    help="교차배관 입구로 유입되는 총 유량(리터/분)입니다.",
+# 작동 헤드 수 (N_act) — NFPC 103 기준개수 개념
+active_heads = st.sidebar.number_input(
+    "작동 헤드 수 (N_act)",
+    min_value=1, max_value=total_heads, value=min(heads_per_branch, total_heads), step=1,
+    help="화재 시 동시에 방수되는 헤드 수입니다. "
+         "NFPC 103 기준개수에 따라 설정합니다. "
+         f"(현재 전체 헤드: {total_heads}개)",
 )
+
+# 유량 자동 산출 (헤드당 80 L/min, NFPC 103)
+auto_flow = int(active_heads * MIN_HEAD_FLOW_LPM)
+use_auto_flow = st.sidebar.checkbox(
+    "유량 자동 산출 (헤드당 80 L/min)",
+    value=True,
+    help="체크 시: 작동 헤드 수 × 80 L/min 으로 자동 계산됩니다. "
+         "해제 시: 직접 유량을 입력할 수 있습니다.",
+)
+if use_auto_flow:
+    design_flow = auto_flow
+    st.sidebar.info(
+        f"설계 유량: **{design_flow} LPM** = {active_heads}개 × 80 L/min (NFPC 103)"
+    )
+else:
+    design_flow = st.sidebar.slider(
+        "전체 설계 유량 (LPM)",
+        min_value=100, max_value=5000, value=auto_flow, step=50,
+        help="교차배관 입구로 유입되는 총 유량(리터/분)입니다.",
+    )
 
 # ── 3. 비드 설정 ──
 st.sidebar.header(":material/build: 용접 비드 설정")
@@ -514,6 +538,7 @@ if run_button or "results" in st.session_state:
                 "params": {
                     "num_branches": num_branches,
                     "heads_per_branch": heads_per_branch,
+                    "active_heads": active_heads,
                     "branch_spacing": branch_spacing,
                     "head_spacing": head_spacing,
                     "inlet_pressure": inlet_pressure,
@@ -624,7 +649,7 @@ if run_button or "results" in st.session_state:
                     )
 
     # ── 탭 ──
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
         ":material/show_chart: 압력 프로파일",
         ":material/ssid_chart: P-Q 곡선",
         ":material/casino: 몬테카를로",
@@ -632,6 +657,7 @@ if run_button or "results" in st.session_state:
         ":material/download: 데이터 추출",
         ":material/search: 변수 스캐닝",
         ":material/science: 베르누이 MC",
+        ":material/grid_on: 2인자 분석",
     ])
 
     # ═══ Tab 1: 압력 프로파일 ═══
@@ -718,6 +744,58 @@ if run_button or "results" in st.session_state:
             yaxis_title="말단 압력 (MPa)", template="plotly_white", height=400,
         )
         st.plotly_chart(fig_branches, use_container_width=True)
+
+        # * 압력 손실 3항 분리 막대그래프 (ΔP_pipe / ΔP_fitting / ΔP_bead)
+        st.subheader("압력 손실 3항 분리 (최악 경로)")
+        sys_A_loss = case_results.get("system_A", {})
+        sys_B_loss = case_results.get("system_B", {})
+
+        loss_categories = ["ΔP_pipe<br>(배관 마찰)", "ΔP_fitting<br>(이음쇠 기본)", "ΔP_bead<br>(비드 추가)"]
+        loss_A = [
+            sys_A_loss.get("loss_pipe_mpa", 0) * 1000,
+            sys_A_loss.get("loss_fitting_mpa", 0) * 1000,
+            sys_A_loss.get("loss_bead_mpa", 0) * 1000,
+        ]
+        loss_B = [
+            sys_B_loss.get("loss_pipe_mpa", 0) * 1000,
+            sys_B_loss.get("loss_fitting_mpa", 0) * 1000,
+            sys_B_loss.get("loss_bead_mpa", 0) * 1000,
+        ]
+        total_A = sum(loss_A)
+        total_B = sum(loss_B)
+
+        fig_loss3 = go.Figure()
+        fig_loss3.add_trace(go.Bar(
+            x=loss_categories, y=loss_A,
+            name=f"Case A (비드 {params['bead_height']}mm)",
+            marker_color="#EF553B", opacity=0.8,
+            text=[f"{v:.1f} kPa<br>({v/total_A*100:.1f}%)" if total_A > 0 else "" for v in loss_A],
+            textposition="auto",
+        ))
+        fig_loss3.add_trace(go.Bar(
+            x=loss_categories, y=loss_B,
+            name="Case B (비드 0mm)",
+            marker_color="#636EFA", opacity=0.8,
+            text=[f"{v:.1f} kPa<br>({v/total_B*100:.1f}%)" if total_B > 0 else "" for v in loss_B],
+            textposition="auto",
+        ))
+        fig_loss3.update_layout(
+            barmode="group",
+            yaxis_title="손실 (kPa)",
+            template="plotly_white", height=450,
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        )
+        st.plotly_chart(fig_loss3, use_container_width=True)
+
+        # 손실 합계 요약
+        col_loss_a, col_loss_b = st.columns(2)
+        with col_loss_a:
+            st.metric("Case A 총 손실", f"{total_A:.1f} kPa",
+                       delta=f"비드 손실: {loss_A[2]:.1f} kPa ({loss_A[2]/total_A*100:.1f}%)" if total_A > 0 else None)
+        with col_loss_b:
+            st.metric("Case B 총 손실", f"{total_B:.1f} kPa",
+                       delta=f"비드 손실: {loss_B[2]:.1f} kPa ({loss_B[2]/total_B*100:.1f}%)" if total_B > 0 else None,
+                       delta_color="off")
 
         with st.expander("최악 가지배관 구간별 상세"):
             det_A = worst_A["segment_details"]
@@ -3184,6 +3262,134 @@ if run_button or "results" in st.session_state:
                     use_container_width=True,
                 )
 
+    # ═══ Tab 8: 2인자 실험계획법 ═══
+    with tab8:
+        st.subheader("2인자 실험계획법: p_bead × h_b → Pf 히트맵")
+        st.caption(
+            "시공 품질(p_bead: 비드 존재 확률)과 용접 기술(h_b: 비드 높이)의 "
+            "교차 영향을 분석하여, 안전/위험 경계를 시각화합니다."
+        )
+
+        col_2f1, col_2f2 = st.columns(2)
+        with col_2f1:
+            tf_iterations = st.number_input(
+                "2인자 MC 반복 횟수",
+                min_value=100, max_value=10000, value=500, step=100,
+                help="각 (p_bead, h_b) 조합마다의 MC 반복 횟수입니다.",
+            )
+        with col_2f2:
+            tf_p_values_str = st.text_input(
+                "p_bead 값 (쉼표 구분)",
+                value="0.1, 0.3, 0.5, 0.7, 0.9",
+                help="시공 품질 확률값을 쉼표로 구분하여 입력하세요.",
+            )
+        tf_h_values_str = st.text_input(
+            "비드 높이 h_b (mm, 쉼표 구분)",
+            value="0.5, 1.0, 1.5, 2.0, 2.5",
+            help="비드 높이값을 쉼표로 구분하여 입력하세요.",
+        )
+
+        if st.button("2인자 분석 실행", type="primary", use_container_width=True):
+            try:
+                tf_p_values = [float(v.strip()) for v in tf_p_values_str.split(",")]
+                tf_h_values = [float(v.strip()) for v in tf_h_values_str.split(",")]
+            except ValueError:
+                st.error("값을 올바르게 입력해주세요. (예: 0.1, 0.3, 0.5)")
+                st.stop()
+
+            total_combos = len(tf_p_values) * len(tf_h_values)
+            with st.spinner(f"2인자 분석 실행 중... ({total_combos}개 조합 × {tf_iterations}회)"):
+                tf_result = run_two_factor_sweep(
+                    p_bead_values=tf_p_values,
+                    bead_height_values=tf_h_values,
+                    n_iterations=tf_iterations,
+                    num_branches=num_branches,
+                    heads_per_branch=heads_per_branch,
+                    branch_spacing_m=branch_spacing,
+                    head_spacing_m=head_spacing,
+                    inlet_pressure_mpa=inlet_pressure,
+                    total_flow_lpm=float(design_flow),
+                    beads_per_branch=beads_per_branch,
+                    topology=topology_key,
+                    relaxation=hc_relaxation if topology_key == "grid" else 0.5,
+                    equipment_k_factors=equipment_k_factors,
+                    supply_pipe_size=supply_pipe_size,
+                )
+
+            # Pf 히트맵
+            fig_heatmap = go.Figure(data=go.Heatmap(
+                z=tf_result["pf_matrix"],
+                x=[f"p={p}" for p in tf_result["p_bead_values"]],
+                y=[f"h_b={h}mm" for h in tf_result["bead_height_values"]],
+                colorscale=[
+                    [0.0, "#2ecc71"],     # 0% → 녹색 (안전)
+                    [0.25, "#f1c40f"],    # 25% → 노란색
+                    [0.5, "#e67e22"],     # 50% → 주황색
+                    [0.75, "#e74c3c"],    # 75% → 빨간색
+                    [1.0, "#8e44ad"],     # 100% → 보라색 (전부 실패)
+                ],
+                colorbar=dict(title="Pf (%)"),
+                text=np.round(tf_result["pf_matrix"], 1),
+                texttemplate="%{text}%",
+                textfont=dict(size=12),
+                hovertemplate="p_bead: %{x}<br>h_b: %{y}<br>Pf: %{z:.1f}%<extra></extra>",
+            ))
+            fig_heatmap.update_layout(
+                title=f"규정 미달 확률 Pf (%) — Q={design_flow} LPM, P_in={inlet_pressure} MPa",
+                xaxis_title="p_bead (시공 품질: 비드 존재 확률)",
+                yaxis_title="h_b (비드 높이, mm)",
+                template="plotly_white", height=500,
+            )
+            st.plotly_chart(fig_heatmap, use_container_width=True)
+
+            # 평균 압력 히트맵
+            fig_pressure = go.Figure(data=go.Heatmap(
+                z=tf_result["mean_pressure_matrix"] * 1000,  # MPa → kPa
+                x=[f"p={p}" for p in tf_result["p_bead_values"]],
+                y=[f"h_b={h}mm" for h in tf_result["bead_height_values"]],
+                colorscale="RdYlGn",
+                reversescale=False,
+                colorbar=dict(title="평균 압력 (kPa)"),
+                text=np.round(tf_result["mean_pressure_matrix"] * 1000, 1),
+                texttemplate="%{text}",
+                textfont=dict(size=11),
+                hovertemplate="p_bead: %{x}<br>h_b: %{y}<br>P_avg: %{z:.1f} kPa<extra></extra>",
+            ))
+            fig_pressure.update_layout(
+                title=f"평균 말단 압력 (kPa) — Q={design_flow} LPM, P_in={inlet_pressure} MPa",
+                xaxis_title="p_bead (시공 품질: 비드 존재 확률)",
+                yaxis_title="h_b (비드 높이, mm)",
+                template="plotly_white", height=500,
+            )
+            # 0.1 MPa = 100 kPa 기준선 표시
+            fig_pressure.add_hline(y=-0.5, line_dash="dot", line_color="red", line_width=0)
+            st.plotly_chart(fig_pressure, use_container_width=True)
+
+            # 결과 테이블
+            st.subheader("2인자 분석 결과 테이블")
+            rows = []
+            for i, h_b in enumerate(tf_result["bead_height_values"]):
+                for j, p_b in enumerate(tf_result["p_bead_values"]):
+                    rows.append({
+                        "p_bead": p_b,
+                        "h_b (mm)": h_b,
+                        "Pf (%)": round(tf_result["pf_matrix"][i, j], 2),
+                        "평균 압력 (kPa)": round(tf_result["mean_pressure_matrix"][i, j] * 1000, 2),
+                        "판정": "FAIL" if tf_result["pf_matrix"][i, j] > 0 else "PASS",
+                    })
+            df_tf = pd.DataFrame(rows)
+            st.dataframe(df_tf, use_container_width=True, hide_index=True)
+
+            # 다운로드
+            csv_tf = df_tf.to_csv(index=False).encode("utf-8-sig")
+            st.download_button(
+                ":material/download: 2인자 분석 결과 (CSV)",
+                csv_tf,
+                "FiPLSim_TwoFactor_Analysis.csv",
+                "text/csv",
+                use_container_width=True,
+            )
+
 else:
     # ── 초기 안내 화면 ──
     st.markdown("---")
@@ -3207,7 +3413,7 @@ else:
             "   B1  B2  B3  B4   가지배관 n개 (양방향)\n"
             "   │   │   │   │\n"
             "   H1  H1  H1  H1   각 가지배관에 헤드 m개\n"
-            "   H2  H2  H2  H2   (관경 자동 선정: NFSC 103)\n"
+            "   H2  H2  H2  H2   (관경 자동 선정: NFTC 103)\n"
             "   ..  ..  ..  ..\n"
             "   Hm  Hm  Hm  Hm   최말단 헤드",
             language=None,
@@ -3223,7 +3429,7 @@ else:
             "   B1   B2   B3   B4  ...  가지배관 n개 (상/하 연결)\n"
             "   │    │    │    │    │\n"
             "   H1   H1   H1   H1  ...  각 가지배관에 헤드 m개\n"
-            "   H2   H2   H2   H2  ...  (관경 자동 선정: NFSC 103)\n"
+            "   H2   H2   H2   H2  ...  (관경 자동 선정: NFTC 103)\n"
             "   ..   ..   ..   ..  ..\n"
             "   Hm   Hm   Hm   Hm  ...  최말단 헤드\n"
             "   │    │    │    │    │\n"
@@ -3241,7 +3447,7 @@ else:
     | 항목 | 설명 |
     |---|---|
     | 동적 생성 | 가지배관 수·헤드 수를 자유롭게 설정 (최대 200×50) |
-    | 자동 관경 | 하류 헤드 수 기준 NFSC 103 자동 선정 |
+    | 자동 관경 | 하류 헤드 수 기준 NFTC 103 자동 선정 |
     | 교차배관 | 전체 헤드 수 기준 65A/80A/100A 자동 선정 |
     | 용접 비드 | 가지배관 직관 구간 내 무작위 배치, MC 시 위치 재배치로 산포도 분석 |
     | 방어 프로그래밍 | 0, 음수, 과도한 값 입력 시 에러 메시지 |

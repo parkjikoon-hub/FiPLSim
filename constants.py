@@ -70,21 +70,21 @@ HC_RELAXATION_MIN = 0.1      # 이완 계수 최솟값
 HC_RELAXATION_MAX = 1.0      # 이완 계수 최댓값
 
 # ──────────────────────────────────────────────
-# ? 자동 관경 선정 규칙 (NFSC 103 기반)
+# ? 자동 관경 선정 규칙 (NFTC 103 기반)
 #   하류 헤드 수에 따른 배관 구경 결정
 # ──────────────────────────────────────────────
 def auto_pipe_size(num_heads_downstream: int) -> str:
     """
-    ! 하류 헤드 수 기준 자동 배관 구경 선정
+    ! 하류 헤드 수 기준 자동 가지배관 구경 선정
 
-    NFSC 103 소화설비 배관 설계 기준:
-      12개 이상 → 65A
-      6~11개   → 50A
-      4~5개    → 40A
-      3개      → 32A
-      1~2개    → 25A
+    NFTC 103 (기술기준) 표 2.5.3.3 "가"란:
+      11개 이상 → 65A  (65mm: 30개까지)
+      6~10개   → 50A  (50mm: 10개까지)
+      4~5개    → 40A  (40mm: 5개까지)
+      3개      → 32A  (32mm: 3개까지)
+      1~2개    → 25A  (25mm: 2개까지)
     """
-    if num_heads_downstream >= 12:
+    if num_heads_downstream >= 11:
         return "65A"
     elif num_heads_downstream >= 6:
         return "50A"
@@ -97,14 +97,16 @@ def auto_pipe_size(num_heads_downstream: int) -> str:
 
 def auto_cross_main_size(total_heads: int) -> str:
     """
-    ! 전체 헤드 수 기준 교차배관 구경 자동 선정
-      40개 이상 → 100A
-      20개 이상 → 80A
-      그 외     → 65A
+    ! 담당 헤드 수 기준 교차배관 구경 자동 선정
+
+    NFTC 103 (기술기준) 표 2.5.3.3 기준:
+      61개 이상 → 100A  (100mm: 100개까지)
+      31개 이상 → 80A   (80mm: 60개까지)
+      그 외     → 65A   (65mm: 30개까지)
     """
-    if total_heads >= 40:
+    if total_heads >= 61:
         return "100A"
-    elif total_heads >= 20:
+    elif total_heads >= 31:
         return "80A"
     else:
         return "65A"
@@ -181,15 +183,15 @@ DEFAULT_TOTAL_FLOW_LPM = 400.0
 DEFAULT_FITTING_SPACING_M = 2.3
 FITTING_SPACING_OPTIONS = [1.7, 2.1, 2.3, 2.5, 3.2]  # 선택 가능한 이음쇠 간격 (m)
 DEFAULT_BEAD_HEIGHT_MM = 1.5       # 기존 용접 기술
-NEW_TECH_BEAD_HEIGHT_MM = 0.0      # 형상제어 신기술
-MIN_TERMINAL_PRESSURE_MPA = 0.1    # 말단 최소 방수압 기준
-MAX_TERMINAL_PRESSURE_MPA = 1.2    # 말단 최대 방수압 기준 (NFPC)
+MIN_TERMINAL_PRESSURE_MPA = 0.1    # 말단 최소 방수압 기준 (NFPC 103)
+MAX_TERMINAL_PRESSURE_MPA = 1.2    # 말단 최대 방수압 기준 (NFPC 103)
+MIN_HEAD_FLOW_LPM = 80.0           # 헤드 1개당 최소 방수량 (L/min, NFPC 103)
 
 # ──────────────────────────────────────────────
-# ? NFPC 유속 제한 기준
+# ? NFPC 103 / NFTC 103 유속 제한 기준
 # ──────────────────────────────────────────────
-MAX_VELOCITY_BRANCH_MS = 6.0       # 가지배관 최대 유속 (m/s) — NFPC
-MAX_VELOCITY_OTHER_MS = 10.0       # 교차배관/기타 최대 유속 (m/s) — NFPC
+MAX_VELOCITY_BRANCH_MS = 6.0       # 가지배관 최대 유속 (m/s) — NFTC 103
+MAX_VELOCITY_OTHER_MS = 10.0       # 교차배관/기타 최대 유속 (m/s) — NFTC 103
 
 # ──────────────────────────────────────────────
 # ? 몬테카를로 기본값

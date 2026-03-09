@@ -444,6 +444,11 @@ def _calculate_branch_profile(
         current_p -= K3_loss
         current_loss += K3_loss
 
+    # * 3항 분리 누적 변수 초기화
+    total_loss_pipe = inlet_pipe_friction_mpa    # ΔP_pipe: 배관 마찰 손실
+    total_loss_fitting = K3_loss                 # ΔP_fitting: 이음쇠 기본 손실 (K3 포함)
+    total_loss_bead = 0.0                        # ΔP_bead: 비드 추가 손실
+
     for i, junc in enumerate(branch.junctions):
         seg = junc.pipe_segment
         segment_flow = total_flow - (i * head_flow)
@@ -462,6 +467,10 @@ def _calculate_branch_profile(
             p_K1 = head_to_mpa(minor_loss(junc.K1_welded, V))
         p_K2 = head_to_mpa(minor_loss(junc.K2_head, V))
 
+        # * K1 → 이음쇠 기본(K_base) + 비드 추가분 분리
+        p_K1_base = head_to_mpa(minor_loss(K1_BASE, V))
+        p_K1_bead = max(0.0, p_K1 - p_K1_base)
+
         # * 직관 구간 내 용접 비드 국부 손실 합산
         beads_in_seg = [b for b in branch.weld_beads if b.segment_index == i]
         p_weld_beads = sum(
@@ -472,6 +481,11 @@ def _calculate_branch_profile(
         total_seg_loss = p_major + p_K1 + p_K2 + p_weld_beads
         current_p -= total_seg_loss
         current_loss += total_seg_loss
+
+        # * 3항 분리 누적
+        total_loss_pipe += p_major
+        total_loss_fitting += p_K1_base + p_K2
+        total_loss_bead += p_K1_bead + p_weld_beads
 
         pressures.append(current_p)
         cumulative_loss.append(current_loss)
@@ -503,6 +517,10 @@ def _calculate_branch_profile(
         "inlet_pipe_friction_mpa": inlet_pipe_friction_mpa,
         "inlet_pipe_size": branch.inlet_pipe_size,
         "segment_details": seg_details,
+        # 3항 분리 손실 (가지배관 내)
+        "loss_pipe_mpa": round(total_loss_pipe, 6),
+        "loss_fitting_mpa": round(total_loss_fitting, 6),
+        "loss_bead_mpa": round(total_loss_bead, 6),
     }
 
 
@@ -564,6 +582,12 @@ def calculate_dynamic_system(
     cm_cumulative_loss = 0.0
     current_cm_pressure = system.inlet_pressure_mpa - equipment_loss_mpa
 
+    # 교차배관 3항 분리 누적
+    cm_loss_pipe = 0.0      # 교차배관 마찰 손실
+    cm_loss_fitting = 0.0   # 교차배관 Tee-Run 손실 + 밸브 손실
+
+    cm_loss_fitting += equipment_loss_mpa  # 밸브류는 이음쇠 손실로 분류
+
     for i in range(n_branches):
         seg = system.cross_main_segments[i]
 
@@ -579,6 +603,8 @@ def calculate_dynamic_system(
             )
             p_cm_tee = head_to_mpa(minor_loss(K_TEE_RUN, V_cm))
             cm_seg_loss = p_cm_major + p_cm_tee
+            cm_loss_pipe += p_cm_major
+            cm_loss_fitting += p_cm_tee
         else:
             cm_seg_loss = 0.0
 
@@ -605,6 +631,12 @@ def calculate_dynamic_system(
     worst_idx = int(min(range(n_branches), key=lambda i: all_terminal_pressures[i]))
     worst_terminal = all_terminal_pressures[worst_idx]
 
+    # 최악 가지배관의 3항 분리 + 교차배관/밸브 손실 합산
+    wp = branch_profiles[worst_idx]
+    system_loss_pipe = cm_loss_pipe + wp.get("loss_pipe_mpa", 0.0)
+    system_loss_fitting = cm_loss_fitting + wp.get("loss_fitting_mpa", 0.0)
+    system_loss_bead = wp.get("loss_bead_mpa", 0.0)
+
     return {
         "branch_inlet_pressures": branch_inlet_pressures,
         "branch_profiles": branch_profiles,
@@ -617,6 +649,10 @@ def calculate_dynamic_system(
         "cross_main_size": system.cross_main_size,
         "equipment_loss_mpa": equipment_loss_mpa,
         "equipment_loss_details": equipment_loss_details,
+        # 3항 분리 손실 (최악 경로: 교차배관 + 최악 가지배관 전체)
+        "loss_pipe_mpa": round(system_loss_pipe, 6),
+        "loss_fitting_mpa": round(system_loss_fitting, 6),
+        "loss_bead_mpa": round(system_loss_bead, 6),
     }
 
 
