@@ -75,12 +75,14 @@ def generate_branch_beads(
     pipe_sizes: List[str],
     K1_base: float = K1_BASE,
     rng=None,
+    bead_height_std_mm: float = 0.0,
 ) -> List[WeldBead]:
     """
     ! 가지배관 직관 구간 내 용접 비드 자동 생성
 
     * rng=None → 균등 배치 (deterministic, 정적 비교용)
     * rng=<Generator> → 무작위 배치 (Monte Carlo용)
+    * bead_height_std_mm > 0 → 비드 높이 정규분포 변동 (비균일 모델)
 
     알고리즘:
     1. 가지배관 전체 길이 = heads_per_branch × head_spacing_m
@@ -107,11 +109,16 @@ def generate_branch_beads(
         pos_in_seg = pos - seg_idx * head_spacing_m
         pipe_size = pipe_sizes[seg_idx]
         pipe_id_mm = PIPE_DIMENSIONS[pipe_size]["id_mm"]
-        K = k_welded_fitting(bead_height_mm, pipe_id_mm, K1_base)
+        # * 비균일 모델: 각 비드마다 높이를 정규분포로 샘플링
+        if bead_height_std_mm > 0 and rng is not None:
+            h_b = max(0.0, rng.normal(bead_height_mm, bead_height_std_mm))
+        else:
+            h_b = bead_height_mm
+        K = k_welded_fitting(h_b, pipe_id_mm, K1_base)
         beads.append(WeldBead(
             segment_index=seg_idx,
             position_in_segment_m=round(pos_in_seg, 4),
-            bead_height_mm=bead_height_mm,
+            bead_height_mm=round(h_b, 3),
             K_value=K,
         ))
     return beads
@@ -248,6 +255,7 @@ def generate_dynamic_system(
     K2_val: float = K2,
     beads_per_branch: int = 0,
     bead_height_for_weld_mm: float = 1.5,
+    bead_height_std_for_weld_mm: float = 0.0,
     weld_beads_2d: Optional[List[List[WeldBead]]] = None,
     rng=None,
     branch_inlet_config: Optional[str] = None,
@@ -357,6 +365,7 @@ def generate_dynamic_system(
             branch_beads = generate_branch_beads(
                 heads_per_branch, head_spacing_m, beads_per_branch,
                 bead_height_for_weld_mm, pipe_sizes, K1_base, rng=rng,
+                bead_height_std_mm=bead_height_std_for_weld_mm,
             )
         else:
             branch_beads = []

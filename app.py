@@ -16,6 +16,7 @@ from constants import (
     PUMP_DATABASE, FITTING_SPACING_OPTIONS, PIPE_DIMENSIONS,
     DEFAULT_INLET_PRESSURE_MPA, DEFAULT_TOTAL_FLOW_LPM,
     DEFAULT_FITTING_SPACING_M, DEFAULT_BEAD_HEIGHT_MM,
+    DEFAULT_BEAD_HEIGHT_STD_MM, MAX_BEAD_HEIGHT_STD_MM,
     MIN_TERMINAL_PRESSURE_MPA, MAX_TERMINAL_PRESSURE_MPA,
     MIN_HEAD_FLOW_LPM,
     MAX_VELOCITY_BRANCH_MS, MAX_VELOCITY_OTHER_MS,
@@ -318,6 +319,26 @@ bead_height = st.sidebar.slider(
     help="기존 용접 기술의 내면 비드 돌출 높이입니다.",
 )
 
+use_bead_variation = st.sidebar.checkbox(
+    "비드 높이 변동 적용 (비균일 모델)",
+    value=False,
+    help="실제 시공에서는 비드 높이가 균일하지 않습니다. "
+         "체크하면 각 접합부마다 정규분포로 다른 비드 높이가 적용됩니다. "
+         "(MC 시뮬레이션에서만 효과가 있습니다)",
+)
+if use_bead_variation:
+    bead_height_std = st.sidebar.slider(
+        "비드 높이 표준편차 (mm)",
+        min_value=0.1, max_value=MAX_BEAD_HEIGHT_STD_MM,
+        value=DEFAULT_BEAD_HEIGHT_STD_MM, step=0.1,
+        help="비드 높이의 변동 폭입니다. 값이 클수록 접합부마다 높이 차이가 커집니다.",
+    )
+    st.sidebar.caption(
+        f"비균일 모델: 평균 {bead_height}mm, 표준편차 {bead_height_std}mm (정규분포)"
+    )
+else:
+    bead_height_std = 0.0
+
 beads_per_branch = st.sidebar.number_input(
     "가지배관당 용접 비드 개수 (개)",
     min_value=0, max_value=MAX_BEADS_PER_BRANCH, value=DEFAULT_BEADS_PER_BRANCH, step=1,
@@ -505,6 +526,7 @@ if run_button or "results" in st.session_state:
                     n_iterations=mc_iterations,
                     min_defects=min_defects, max_defects=max_defects,
                     bead_height_mm=bead_height,
+                    bead_height_std_mm=bead_height_std,
                     num_branches=num_branches, heads_per_branch=heads_per_branch,
                     branch_spacing_m=branch_spacing, head_spacing_m=head_spacing,
                     inlet_pressure_mpa=inlet_pressure,
@@ -2353,6 +2375,7 @@ if run_button or "results" in st.session_state:
                     inlet_pressure_mpa=inlet_pressure,
                     total_flow_lpm=float(design_flow),
                     bead_height_mm=bead_height,
+                    bead_height_std_mm=bead_height_std,
                     beads_per_branch=beads_per_branch,
                     topology=topology_key,
                     relaxation=hc_relaxation,
@@ -2925,6 +2948,7 @@ if run_button or "results" in st.session_state:
                     p_values=bern_p_values,
                     n_iterations=bern_n_iter,
                     bead_height_mm=bead_height,
+                    bead_height_std_mm=bead_height_std,
                     num_branches=num_branches,
                     heads_per_branch=heads_per_branch,
                     branch_spacing_m=branch_spacing,
@@ -3303,6 +3327,7 @@ if run_button or "results" in st.session_state:
                     p_bead_values=tf_p_values,
                     bead_height_values=tf_h_values,
                     n_iterations=tf_iterations,
+                    bead_height_std_mm=bead_height_std,
                     num_branches=num_branches,
                     heads_per_branch=heads_per_branch,
                     branch_spacing_m=branch_spacing,

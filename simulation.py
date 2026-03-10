@@ -32,6 +32,7 @@ def run_dynamic_monte_carlo(
     min_defects: int = DEFAULT_MIN_DEFECTS,
     max_defects: int = DEFAULT_MAX_DEFECTS,
     bead_height_mm: float = 1.5,
+    bead_height_std_mm: float = 0.0,
     num_branches: int = DEFAULT_NUM_BRANCHES,
     heads_per_branch: int = DEFAULT_HEADS_PER_BRANCH,
     branch_spacing_m: float = DEFAULT_BRANCH_SPACING_M,
@@ -98,7 +99,10 @@ def run_dynamic_monte_carlo(
         for flat_idx in sorted(flat_positions.tolist()):
             b = flat_idx // heads_per_branch
             h = flat_idx % heads_per_branch
-            beads_2d[b][h] = bead_height_mm
+            if bead_height_std_mm > 0:
+                beads_2d[b][h] = max(0.0, rng.normal(bead_height_mm, bead_height_std_mm))
+            else:
+                beads_2d[b][h] = bead_height_mm
             defect_frequency[b][h] += 1
             positions_2d.append((b, h))
 
@@ -121,6 +125,7 @@ def run_dynamic_monte_carlo(
                 bead_heights_2d=beads_2d,
                 beads_per_branch=beads_per_branch,
                 bead_height_for_weld_mm=bead_height_mm,
+                bead_height_std_for_weld_mm=bead_height_std_mm,
                 rng=rng,
                 branch_inlet_config=branch_inlet_config,
                 **common,
@@ -159,6 +164,7 @@ def run_bernoulli_monte_carlo(
     p_bead: float = 0.5,
     n_iterations: int = DEFAULT_BERNOULLI_MC_ITERATIONS,
     bead_height_mm: float = 1.5,
+    bead_height_std_mm: float = 0.0,
     num_branches: int = DEFAULT_NUM_BRANCHES,
     heads_per_branch: int = DEFAULT_HEADS_PER_BRANCH,
     branch_spacing_m: float = DEFAULT_BRANCH_SPACING_M,
@@ -207,7 +213,10 @@ def run_bernoulli_monte_carlo(
         for b in range(num_branches):
             for h in range(heads_per_branch):
                 if rand_vals[b][h] <= p_bead:
-                    beads_2d[b][h] = bead_height_mm
+                    if bead_height_std_mm > 0:
+                        beads_2d[b][h] = max(0.0, rng.normal(bead_height_mm, bead_height_std_mm))
+                    else:
+                        beads_2d[b][h] = bead_height_mm
                     count += 1
         bead_counts[trial] = count
 
@@ -230,6 +239,7 @@ def run_bernoulli_monte_carlo(
                 bead_heights_2d=beads_2d,
                 beads_per_branch=beads_per_branch,
                 bead_height_for_weld_mm=bead_height_mm,
+                bead_height_std_for_weld_mm=bead_height_std_mm,
                 rng=None,
                 branch_inlet_config=branch_inlet_config,
                 **common,
@@ -263,6 +273,7 @@ def run_bernoulli_sweep(
     p_values: list,
     n_iterations: int = DEFAULT_BERNOULLI_MC_ITERATIONS,
     bead_height_mm: float = 1.5,
+    bead_height_std_mm: float = 0.0,
     num_branches: int = DEFAULT_NUM_BRANCHES,
     heads_per_branch: int = DEFAULT_HEADS_PER_BRANCH,
     branch_spacing_m: float = DEFAULT_BRANCH_SPACING_M,
@@ -293,6 +304,7 @@ def run_bernoulli_sweep(
             p_bead=p_val,
             n_iterations=n_iterations,
             bead_height_mm=bead_height_mm,
+            bead_height_std_mm=bead_height_std_mm,
             num_branches=num_branches,
             heads_per_branch=heads_per_branch,
             branch_spacing_m=branch_spacing_m,
@@ -482,6 +494,7 @@ def run_variable_sweep(
     inlet_pressure_mpa: float = DEFAULT_INLET_PRESSURE_MPA,
     total_flow_lpm: float = DEFAULT_TOTAL_FLOW_LPM,
     bead_height_mm: float = 1.5,
+    bead_height_std_mm: float = 0.0,
     beads_per_branch: int = DEFAULT_BEADS_PER_BRANCH,
     topology: str = "tree",
     relaxation: float = 0.5,
@@ -514,6 +527,7 @@ def run_variable_sweep(
                     p_bead=p_b,
                     n_iterations=mc_iterations,
                     bead_height_mm=bead_height_mm,
+                    bead_height_std_mm=bead_height_std_mm,
                     num_branches=num_branches,
                     heads_per_branch=heads_per_branch,
                     branch_spacing_m=branch_spacing_m,
@@ -571,6 +585,7 @@ def run_variable_sweep(
                     min_defects=mc_min_defects,
                     max_defects=mc_max_defects,
                     bead_height_mm=bead_height_mm,
+                    bead_height_std_mm=bead_height_std_mm,
                     num_branches=num_branches,
                     heads_per_branch=heads_per_branch,
                     branch_spacing_m=branch_spacing_m,
@@ -788,6 +803,7 @@ def run_two_factor_sweep(
     p_bead_values: list = None,
     bead_height_values: list = None,
     n_iterations: int = 1000,
+    bead_height_std_mm: float = 0.0,
     num_branches: int = DEFAULT_NUM_BRANCHES,
     heads_per_branch: int = DEFAULT_HEADS_PER_BRANCH,
     branch_spacing_m: float = DEFAULT_BRANCH_SPACING_M,
@@ -830,6 +846,7 @@ def run_two_factor_sweep(
                 p_bead=p_bead,
                 n_iterations=n_iterations,
                 bead_height_mm=h_b,
+                bead_height_std_mm=bead_height_std_mm,
                 num_branches=num_branches,
                 heads_per_branch=heads_per_branch,
                 branch_spacing_m=branch_spacing_m,
