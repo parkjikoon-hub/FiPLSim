@@ -36,6 +36,9 @@ desktop.ini
 .agent/
 .claude/
 
+# Paper simulation outputs (regenerate via run_paper_simulations.py)
+outputs/
+
 # MC simulation results (large per-trial CSV — regenerate via scripts)
 # Keep summary CSVs and Excel files, ignore large trial-level data
 MC_Results/MC_bead*.csv

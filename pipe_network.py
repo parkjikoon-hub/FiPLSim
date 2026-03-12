@@ -666,6 +666,166 @@ def calculate_dynamic_system(
 
 
 # ══════════════════════════════════════════════
+#  PART 5.5: 수리계산 직접 역산 (ΔP 산출)
+# ══════════════════════════════════════════════
+
+def calculate_system_delta_p(
+    total_flow_lpm: float,
+    num_branches: int = DEFAULT_NUM_BRANCHES,
+    heads_per_branch: int = DEFAULT_HEADS_PER_BRANCH,
+    branch_spacing_m: float = DEFAULT_BRANCH_SPACING_M,
+    head_spacing_m: float = DEFAULT_HEAD_SPACING_M,
+    bead_height_mm: float = 0.0,
+    beads_per_branch: int = 0,
+    K1_base: float = K1_BASE,
+    K2_val: float = K2,
+    K3_val: float = K3,
+    equipment_k_factors: Optional[dict] = None,
+    supply_pipe_size: str = DEFAULT_SUPPLY_PIPE_SIZE,
+    branch_inlet_config: Optional[str] = None,
+) -> dict:
+    """
+    ! DynamicSystem 객체 없이 수식만으로 시스템 총 ΔP 직접 계산
+
+    calculate_dynamic_system()과 독립적인 코드 경로로,
+    교차 검증(수리계산 vs 시뮬레이션)의 근거가 됩니다.
+
+    알고리즘:
+    1. 장비 K-factor 손실 (공급배관 유속 기준)
+    2. 교차배관 손실 (최악 경로 B#4까지 누적)
+    3. 분기 입구 손실 (K3 + 입구관 마찰)
+    4. 가지배관 손실 (8헤드 순회, 관경 자동 선정)
+    5. 직관 용접 비드 손실 (균등 배치, 결정론적)
+
+    반환: delta_p 항목별 분리 dict
+    """
+    branch_flow = total_flow_lpm / num_branches
+    head_flow = branch_flow / heads_per_branch
+    total_heads = num_branches * heads_per_branch
+
+    # ── 분기 구조 설정 파싱 ──
+    _cross_main_override = None
+    _inlet_pipe = None
+    _inlet_pipe_length = 0.0
+    if branch_inlet_config and branch_inlet_config in BRANCH_INLET_CONFIGS:
+        cfg = BRANCH_INLET_CONFIGS[branch_inlet_config]
+        _cross_main_override = cfg.get("cross_main_override")
+        _inlet_pipe = cfg.get("inlet_pipe")
+        _inlet_pipe_length = cfg.get("inlet_pipe_length_m", 0.3)
+
+    # ── 교차배관 구경 결정 ──
+    if _cross_main_override:
+        cross_main_size = _cross_main_override
+    else:
+        cross_main_size = auto_cross_main_size(total_heads)
+    cross_main_id_m = get_inner_diameter_m(cross_main_size)
+
+    # 3항 분리 누적 변수
+    dp_pipe = 0.0      # 배관 마찰 손실
+    dp_fitting = 0.0   # 이음쇠 기본 손실
+    dp_bead = 0.0      # 비드 추가 손실
+    dp_equipment = 0.0  # 장비류 손실
+
+    # ── Step 1: 장비 K-factor 손실 ──
+    if equipment_k_factors:
+        supply_id_m = get_inner_diameter_m(supply_pipe_size)
+        V_supply = velocity_from_flow(total_flow_lpm, supply_id_m)
+        for name, info in equipment_k_factors.items():
+            K_val = info["K"]
+            qty = info.get("qty", 1)
+            dp_equipment += head_to_mpa(minor_loss(K_val, V_supply)) * qty
+    dp_fitting += dp_equipment  # 장비류는 이음쇠 손실로 분류
+
+    # ── Step 2: 교차배관 손실 (최악 경로 = 마지막 가지배관) ──
+    for i in range(1, num_branches):
+        remaining_flow = total_flow_lpm - i * branch_flow
+        V_cm = velocity_from_flow(remaining_flow, cross_main_id_m)
+        Re_cm = reynolds_number(V_cm, cross_main_id_m)
+        f_cm = friction_factor(Re_cm, D=cross_main_id_m)
+        p_cm_major = head_to_mpa(major_loss(f_cm, branch_spacing_m, cross_main_id_m, V_cm))
+        p_cm_tee = head_to_mpa(minor_loss(K_TEE_RUN, V_cm))
+        dp_pipe += p_cm_major
+        dp_fitting += p_cm_tee
+
+    # ── Step 3: 분기 입구 손실 (K3 + 입구관 마찰) ──
+    # 가지배관 관경 자동 선정 (분석 경로용)
+    pipe_sizes = []
+    for h in range(heads_per_branch):
+        downstream = heads_per_branch - h
+        pipe_sizes.append(auto_pipe_size(downstream))
+
+    if _inlet_pipe:
+        inlet_id_m = get_inner_diameter_m(_inlet_pipe)
+        V_inlet = velocity_from_flow(branch_flow, inlet_id_m)
+        K3_loss = head_to_mpa(minor_loss(K3_val, V_inlet))
+        dp_fitting += K3_loss
+        # 입구관 직관 마찰 손실
+        Re_inlet = reynolds_number(V_inlet, inlet_id_m)
+        f_inlet = friction_factor(Re_inlet, D=inlet_id_m)
+        inlet_pipe_friction = head_to_mpa(
+            major_loss(f_inlet, _inlet_pipe_length, inlet_id_m, V_inlet)
+        )
+        dp_pipe += inlet_pipe_friction
+    else:
+        first_id_m = get_inner_diameter_m(pipe_sizes[0])
+        V_inlet = velocity_from_flow(branch_flow, first_id_m)
+        K3_loss = head_to_mpa(minor_loss(K3_val, V_inlet))
+        dp_fitting += K3_loss
+
+    # ── Step 4: 가지배관 순회 (8헤드) ──
+    for i in range(heads_per_branch):
+        seg_size = pipe_sizes[i]
+        seg_id_m = get_inner_diameter_m(seg_size)
+        seg_id_mm = PIPE_DIMENSIONS[seg_size]["id_mm"]
+        segment_flow = branch_flow - i * head_flow
+        V = velocity_from_flow(segment_flow, seg_id_m)
+        Re = reynolds_number(V, seg_id_m)
+        f = friction_factor(Re, D=seg_id_m)
+
+        # 주손실 (직관 마찰)
+        p_major = head_to_mpa(major_loss(f, head_spacing_m, seg_id_m, V))
+        dp_pipe += p_major
+
+        # 이음쇠 K1 손실 (비드 포함)
+        K1 = k_welded_fitting(bead_height_mm, seg_id_mm, K1_base)
+        p_K1 = head_to_mpa(minor_loss(K1, V))
+        p_K1_base = head_to_mpa(minor_loss(K1_base, V))
+        p_K1_bead = max(0.0, p_K1 - p_K1_base)
+        dp_fitting += p_K1_base
+        dp_bead += p_K1_bead
+
+        # 헤드 K2 손실
+        p_K2 = head_to_mpa(minor_loss(K2_val, V))
+        dp_fitting += p_K2
+
+    # ── Step 5: 직관 용접 비드 손실 (균등 배치) ──
+    if beads_per_branch > 0:
+        weld_beads = generate_branch_beads(
+            heads_per_branch, head_spacing_m, beads_per_branch,
+            bead_height_mm if bead_height_mm > 0 else 1.5,
+            pipe_sizes, K1_base, rng=None,
+        )
+        for wb in weld_beads:
+            seg_idx = wb.segment_index
+            seg_id_m = get_inner_diameter_m(pipe_sizes[seg_idx])
+            segment_flow = branch_flow - seg_idx * head_flow
+            V = velocity_from_flow(segment_flow, seg_id_m)
+            dp_bead += head_to_mpa(minor_loss(wb.K_value, V))
+
+    dp_total = dp_pipe + dp_fitting + dp_bead
+
+    return {
+        "delta_p_total_mpa": round(dp_total, 6),
+        "delta_p_pipe_mpa": round(dp_pipe, 6),
+        "delta_p_fitting_mpa": round(dp_fitting, 6),
+        "delta_p_bead_mpa": round(dp_bead, 6),
+        "delta_p_equipment_mpa": round(dp_equipment, 6),
+        "worst_branch_index": num_branches - 1,
+        "method": "analytical",
+    }
+
+
+# ══════════════════════════════════════════════
 #  PART 6: 동적 시스템 Case A vs B 비교
 # ══════════════════════════════════════════════
 
