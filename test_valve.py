@@ -277,14 +277,14 @@ mc_no = run_dynamic_monte_carlo(
     n_iterations=30, bead_height_mm=1.5,
     num_branches=4, heads_per_branch=8,
     inlet_pressure_mpa=1.4, total_flow_lpm=400.0,
-    beads_per_branch=5, topology="tree",
+    topology="tree",
     equipment_k_factors=None,
 )
 mc_yes = run_dynamic_monte_carlo(
     n_iterations=30, bead_height_mm=1.5,
     num_branches=4, heads_per_branch=8,
     inlet_pressure_mpa=1.4, total_flow_lpm=400.0,
-    beads_per_branch=5, topology="tree",
+    topology="tree",
     equipment_k_factors=DEFAULT_EQUIPMENT_K_FACTORS,
     supply_pipe_size="100A",
 )
@@ -311,13 +311,13 @@ from simulation import run_dynamic_sensitivity
 sens_no = run_dynamic_sensitivity(
     bead_height_mm=1.5, num_branches=4, heads_per_branch=8,
     inlet_pressure_mpa=1.4, total_flow_lpm=400.0,
-    beads_per_branch=5, topology="tree",
+    topology="tree",
     equipment_k_factors=None,
 )
 sens_yes = run_dynamic_sensitivity(
     bead_height_mm=1.5, num_branches=4, heads_per_branch=8,
     inlet_pressure_mpa=1.4, total_flow_lpm=400.0,
-    beads_per_branch=5, topology="tree",
+    topology="tree",
     equipment_k_factors=DEFAULT_EQUIPMENT_K_FACTORS,
     supply_pipe_size="100A",
 )
@@ -349,14 +349,14 @@ bern_no = run_bernoulli_monte_carlo(
     p_bead=0.5, n_iterations=30, bead_height_mm=1.5,
     num_branches=4, heads_per_branch=8,
     inlet_pressure_mpa=1.4, total_flow_lpm=400.0,
-    beads_per_branch=5, topology="tree",
+    topology="tree",
     equipment_k_factors=None,
 )
 bern_yes = run_bernoulli_monte_carlo(
     p_bead=0.5, n_iterations=30, bead_height_mm=1.5,
     num_branches=4, heads_per_branch=8,
     inlet_pressure_mpa=1.4, total_flow_lpm=400.0,
-    beads_per_branch=5, topology="tree",
+    topology="tree",
     equipment_k_factors=DEFAULT_EQUIPMENT_K_FACTORS,
     supply_pipe_size="100A",
 )
@@ -375,14 +375,14 @@ sweep_no = run_variable_sweep(
     sweep_variable="design_flow", start_val=200, end_val=600, step_val=200,
     num_branches=4, heads_per_branch=8,
     inlet_pressure_mpa=1.4, bead_height_mm=1.5,
-    beads_per_branch=5, topology="tree",
+    topology="tree",
     equipment_k_factors=None,
 )
 sweep_yes = run_variable_sweep(
     sweep_variable="design_flow", start_val=200, end_val=600, step_val=200,
     num_branches=4, heads_per_branch=8,
     inlet_pressure_mpa=1.4, bead_height_mm=1.5,
-    beads_per_branch=5, topology="tree",
+    topology="tree",
     equipment_k_factors=DEFAULT_EQUIPMENT_K_FACTORS,
     supply_pipe_size="100A",
 )

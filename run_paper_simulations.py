@@ -17,6 +17,7 @@ import importlib
 import math
 import warnings
 from pathlib import Path
+from contextlib import contextmanager
 from datetime import datetime
 
 import numpy as np
@@ -73,7 +74,6 @@ HEAD_SPACING_M = 2.1
 DESIGN_FLOW_LPM = 2560.0        # 32 × 80 LPM (NFPC 103)
 BEAD_HEIGHT_MM = 1.5
 BEAD_HEIGHT_STD_MM = 0.5         # 비균일 모델 기본 σ
-BEADS_PER_BRANCH = 4
 BRANCH_INLET_CONFIG = "80A-65A"
 SUPPLY_PIPE_SIZE = "100A"
 MC_ITERATIONS = 10000
@@ -105,6 +105,7 @@ OUTPUT_DIR = BASE_DIR / "outputs"
 STAGE1_DIR = OUTPUT_DIR / "stage1_기반확립"
 STAGE2_DIR = OUTPUT_DIR / "stage2_파라메트릭"
 STAGE3_DIR = OUTPUT_DIR / "stage3_확률론적"
+STAGE4_DIR = OUTPUT_DIR / "stage4_revison_simulator_result"
 
 # 시스템 특성화 저장 파일
 CHAR_FILE = OUTPUT_DIR / "system_characterization.json"
@@ -116,7 +117,8 @@ def ensure_dirs():
     """출력 디렉토리 생성"""
     for d in [STAGE1_DIR / "data", STAGE1_DIR / "figures",
               STAGE2_DIR / "data", STAGE2_DIR / "figures",
-              STAGE3_DIR / "data", STAGE3_DIR / "figures"]:
+              STAGE3_DIR / "data", STAGE3_DIR / "figures",
+              STAGE4_DIR / "data", STAGE4_DIR / "figures"]:
         d.mkdir(parents=True, exist_ok=True)
 
 def save_csv(df, path):
@@ -203,7 +205,6 @@ def common_params_mc():
         K1_base=K1_BASE,
         K2_val=K2,
         K3_val=K3,
-        beads_per_branch=BEADS_PER_BRANCH,
     )
 
 def elapsed(t0):
@@ -266,11 +267,11 @@ def run_part0_5(data_dir):
     # [Step 1] 수리계산 직접 역산 (Analytical)
     print("  Step 1: 수리계산 직접 역산 (Analytical)")
     analytical_B = pn.calculate_system_delta_p(
-        bead_height_mm=0.0, beads_per_branch=0,
+        bead_height_mm=0.0,
         **analytical_params,
     )
     analytical_A = pn.calculate_system_delta_p(
-        bead_height_mm=BEAD_HEIGHT_MM, beads_per_branch=BEADS_PER_BRANCH,
+        bead_height_mm=BEAD_HEIGHT_MM,
         **analytical_params,
     )
     dp_analytical_B = analytical_B["delta_p_total_mpa"]
@@ -289,7 +290,6 @@ def run_part0_5(data_dir):
             bead_height_new=0.0,
             inlet_pressure_mpa=p_in,
             total_flow_lpm=DESIGN_FLOW_LPM,
-            beads_per_branch=BEADS_PER_BRANCH,
             **common_params(),
         )
         dp_b = round(p_in - comp["terminal_B_mpa"], 6)
@@ -526,7 +526,6 @@ def run_part2(data_dir, fig_dir, p_ref):
         bead_height_new=0.0,
         inlet_pressure_mpa=p_ref,
         total_flow_lpm=DESIGN_FLOW_LPM,
-        beads_per_branch=BEADS_PER_BRANCH,
         **common_params(),
     )
 
@@ -604,7 +603,6 @@ def run_part2(data_dir, fig_dir, p_ref):
         start_val=1200, end_val=2600, step_val=40,
         inlet_pressure_mpa=p_ref,
         bead_height_mm=BEAD_HEIGHT_MM,
-        beads_per_branch=BEADS_PER_BRANCH,
         total_flow_lpm=DESIGN_FLOW_LPM,
         **common_params(),
     )
@@ -643,7 +641,6 @@ def run_part2(data_dir, fig_dir, p_ref):
         start_val=0.2, end_val=2.0, step_val=0.05,
         total_flow_lpm=DESIGN_FLOW_LPM,
         bead_height_mm=BEAD_HEIGHT_MM,
-        beads_per_branch=BEADS_PER_BRANCH,
         **common_params(),
     )
     b3_rows = []
@@ -680,9 +677,9 @@ def run_part2(data_dir, fig_dir, p_ref):
 # ══════════════════════════════════════════════
 
 def run_stage2(p_ref):
-    """2단계: 비드 높이/개수 파라메트릭 + 민감도"""
+    """2단계: 비드 높이 파라메트릭 + 민감도"""
     print("\n" + "=" * 60)
-    print("  2단계: 파라메트릭 스터디 (Part 3 + Part 4 + Part 5)")
+    print("  2단계: 파라메트릭 스터디 (Part 3 + Part 5)")
     print("=" * 60)
     t0 = time.time()
 
@@ -690,7 +687,6 @@ def run_stage2(p_ref):
     fig_dir = STAGE2_DIR / "figures"
 
     run_part3(data_dir, fig_dir, p_ref)
-    run_part4(data_dir, fig_dir, p_ref)
     run_part5(data_dir, fig_dir, p_ref)
 
     generate_stage2_report(data_dir, fig_dir, p_ref)
@@ -710,7 +706,6 @@ def run_part3(data_dir, fig_dir, p_ref):
         start_val=0.0, end_val=3.0, step_val=0.25,
         total_flow_lpm=DESIGN_FLOW_LPM,
         inlet_pressure_mpa=p_ref,
-        beads_per_branch=BEADS_PER_BRANCH,
         **common_params(),
     )
     h1_rows = []
@@ -751,7 +746,6 @@ def run_part3(data_dir, fig_dir, p_ref):
             start_val=0.0, end_val=3.0, step_val=0.25,
             total_flow_lpm=flow,
             inlet_pressure_mpa=p_ref,
-            beads_per_branch=BEADS_PER_BRANCH,
             **common_params(),
         )
         h2_plot_data[flow] = (r["sweep_values"], r["terminal_A"])
@@ -807,94 +801,6 @@ def run_part3(data_dir, fig_dir, p_ref):
     ax.grid(True, alpha=0.3)
     ax.set_yscale("log")
     save_fig(fig, fig_dir / "fig07_K_eff_by_pipe.png")
-
-
-# ── Part 4: 비드 개수 파라메트릭 ──
-def run_part4(data_dir, fig_dir, p_ref):
-    """N1~N2"""
-    print("\n── Part 4: 비드 개수 파라메트릭 스터디 ──")
-
-    # --- N1: 비드 개수 스윕 ---
-    print("  N1: 비드 개수 스윕 (0~20개)")
-    n_beads_list = [0, 1, 2, 3, 4, 6, 8, 12, 16, 20]
-    n1_rows = []
-    for nb in n_beads_list:
-        print(f"    n_beads={nb} ...", end=" ", flush=True)
-        system = pn.generate_dynamic_system(
-            bead_heights_2d=None,
-            bead_height_for_weld_mm=BEAD_HEIGHT_MM,
-            beads_per_branch=nb,
-            total_flow_lpm=DESIGN_FLOW_LPM,
-            inlet_pressure_mpa=p_ref,
-            branch_inlet_config=BRANCH_INLET_CONFIG,
-            **{k: v for k, v in common_params().items()
-               if k not in ("equipment_k_factors", "supply_pipe_size",
-                            "branch_inlet_config")},
-        )
-        result = pn.calculate_dynamic_system(
-            system,
-            equipment_k_factors=EQUIPMENT_K_FACTORS,
-            supply_pipe_size=SUPPLY_PIPE_SIZE,
-        )
-        n1_rows.append({
-            "beads_per_branch": nb,
-            "total_beads": nb * NUM_BRANCHES,
-            "terminal_mpa": round(result["worst_terminal_mpa"], 4),
-            "loss_pipe_mpa": round(result["loss_pipe_mpa"], 4),
-            "loss_fitting_mpa": round(result["loss_fitting_mpa"], 4),
-            "loss_bead_mpa": round(result["loss_bead_mpa"], 4),
-            "pass": result["worst_terminal_mpa"] >= PASS_THRESHOLD_MPA,
-        })
-        print(f"P_term={result['worst_terminal_mpa']:.4f}")
-    df_n1 = pd.DataFrame(n1_rows)
-    save_csv(df_n1, data_dir / "N1_count_sweep.csv")
-
-    # Fig.8: 비드 개수 막대그래프
-    fig, ax = plt.subplots(figsize=(10, 6))
-    x = range(len(n_beads_list))
-    colors = ["green" if p else "red" for p in df_n1["pass"]]
-    ax.bar(x, df_n1["terminal_mpa"], color=colors, alpha=0.7)
-    ax.axhline(y=PASS_THRESHOLD_MPA, color="orange", linestyle="--", linewidth=2)
-    ax.set_xticks(x)
-    ax.set_xticklabels(n_beads_list)
-    ax.set_xlabel("가지배관당 비드 개수")
-    ax.set_ylabel("말단 압력 (MPa)")
-    ax.set_title(f"비드 개수별 말단 압력 (Q={DESIGN_FLOW_LPM}, h_b={BEAD_HEIGHT_MM}mm)")
-    save_fig(fig, fig_dir / "fig08_bead_count.png")
-
-    # --- N2: 이음쇠 vs 직관 비드 분리 ---
-    print("  N2: 이음쇠 vs 직관 비드 분리 (3조건)")
-    n2_cases = [
-        {"name": "(a) 이음쇠만", "bead_h": BEAD_HEIGHT_MM, "n_beads": 0},
-        {"name": "(b) 직관만",   "bead_h": 0.0,            "n_beads": BEADS_PER_BRANCH},
-        {"name": "(c) 복합",     "bead_h": BEAD_HEIGHT_MM, "n_beads": BEADS_PER_BRANCH},
-    ]
-    n2_rows = []
-    for case in n2_cases:
-        system = pn.generate_dynamic_system(
-            bead_height_for_weld_mm=case["bead_h"],
-            beads_per_branch=case["n_beads"],
-            total_flow_lpm=DESIGN_FLOW_LPM,
-            inlet_pressure_mpa=p_ref,
-            branch_inlet_config=BRANCH_INLET_CONFIG,
-            **{k: v for k, v in common_params().items()
-               if k not in ("equipment_k_factors", "supply_pipe_size",
-                            "branch_inlet_config")},
-        )
-        result = pn.calculate_dynamic_system(
-            system, equipment_k_factors=EQUIPMENT_K_FACTORS,
-            supply_pipe_size=SUPPLY_PIPE_SIZE,
-        )
-        n2_rows.append({
-            "조건": case["name"],
-            "bead_height_mm": case["bead_h"],
-            "beads_per_branch": case["n_beads"],
-            "terminal_mpa": round(result["worst_terminal_mpa"], 4),
-            "loss_pipe_mpa": round(result["loss_pipe_mpa"], 4),
-            "loss_fitting_mpa": round(result["loss_fitting_mpa"], 4),
-            "loss_bead_mpa": round(result["loss_bead_mpa"], 4),
-        })
-    save_csv(pd.DataFrame(n2_rows), data_dir / "N2_contribution_split.csv")
 
 
 # ── Part 5: 민감도 분석 ──
@@ -1314,7 +1220,6 @@ def run_part8(data_dir, fig_dir, p_ref):
         start_val=1200, end_val=2600, step_val=40,
         inlet_pressure_mpa=p_ref,
         bead_height_mm=BEAD_HEIGHT_MM,
-        beads_per_branch=BEADS_PER_BRANCH,
         total_flow_lpm=DESIGN_FLOW_LPM,
         **common_params(),
     )
@@ -1362,7 +1267,6 @@ def run_part8(data_dir, fig_dir, p_ref):
             start_val=1200, end_val=2600, step_val=40,
             inlet_pressure_mpa=p_in,
             bead_height_mm=BEAD_HEIGHT_MM,
-            beads_per_branch=BEADS_PER_BRANCH,
             total_flow_lpm=DESIGN_FLOW_LPM,
             **common_params(),
         )
@@ -1387,7 +1291,6 @@ def run_part8(data_dir, fig_dir, p_ref):
         bead_height_new=0.0,
         inlet_pressure_mpa=p_ref,
         total_flow_lpm=DESIGN_FLOW_LPM,
-        beads_per_branch=BEADS_PER_BRANCH,
         **common_params(),
     )
 
@@ -1456,7 +1359,6 @@ def _create_docx_report(title, stage_dir, data_dir, fig_dir, sections):
         ("설계 유량", f"{DESIGN_FLOW_LPM} LPM"),
         ("비드 높이", f"{BEAD_HEIGHT_MM} mm"),
         ("비드 높이 σ", f"{BEAD_HEIGHT_STD_MM} mm"),
-        ("가지당 비드 수", str(BEADS_PER_BRANCH)),
         ("분기 구성", BRANCH_INLET_CONFIG),
         ("공급배관", SUPPLY_PIPE_SIZE),
         ("관 조도", f"{constants.EPSILON_MM} mm"),
@@ -1583,16 +1485,6 @@ def generate_stage2_report(data_dir, fig_dir, p_ref):
             "figures": ["fig07_K_eff_by_pipe.png"],
         },
         {
-            "title": "Part 4-N1: 비드 개수 스윕",
-            "description": "가지배관당 비드 개수에 따른 말단 압력 변화를 분석합니다.",
-            "csv_file": "N1_count_sweep.csv",
-            "figures": ["fig08_bead_count.png"],
-        },
-        {
-            "title": "Part 4-N2: 이음쇠 vs 직관 비드 분리",
-            "csv_file": "N2_contribution_split.csv",
-        },
-        {
             "title": "Part 5-S1: 위치별 민감도 분석",
             "description": "각 접합부 위치에 단일 비드를 배치했을 때의 압력 영향을 순위화합니다.",
             "csv_file": "S1_sensitivity_rank.csv",
@@ -1707,7 +1599,6 @@ def run_additional1():
                 bead_height_new=0.0,
                 inlet_pressure_mpa=p_in,
                 total_flow_lpm=DESIGN_FLOW_LPM,
-                beads_per_branch=BEADS_PER_BRANCH,
                 **common_params(),
             )
 
@@ -1776,7 +1667,7 @@ def run_additional1():
                         "K1_value": round(seg["K1_value"], 4),
                         "K1_loss_mpa": round(seg["K1_loss_mpa"], 6),
                         "K2_loss_mpa": round(seg["K2_loss_mpa"], 6),
-                        "weld_bead_loss_mpa": round(seg["weld_bead_loss_mpa"], 6),
+                        "reducer_loss_mpa": round(seg.get("reducer_loss_mpa", 0), 6),
                         "total_seg_loss_mpa": round(seg["total_seg_loss_mpa"], 6),
                         "pressure_after_mpa": round(seg["pressure_after_mpa"], 4),
                         "bead_height_at_joint_mm": round(seg["bead_height_mm"], 2),
@@ -1875,6 +1766,515 @@ def _plot_add1_heatmaps(bead_heights, inlet_pressures,
 
 
 # ══════════════════════════════════════════════
+#  4단계: 리비전 추가 시뮬레이션 (Category A~D)
+# ══════════════════════════════════════════════
+
+# ── Stage 4 헬퍼 함수 ──
+
+def _calculate_p_ref_for_config(
+    total_flow_lpm, num_branches, heads_per_branch,
+    branch_spacing_m, head_spacing_m,
+    equipment_k_factors, supply_pipe_size, branch_inlet_config,
+    K1_base=K1_BASE, K2_val=K2, K3_val=K3,
+):
+    """특정 구성에 대한 P_ref 경량 계산: P_ref = 0.1 + ΔP_system_B"""
+    delta_p = pn.calculate_system_delta_p(
+        total_flow_lpm=total_flow_lpm,
+        num_branches=num_branches,
+        heads_per_branch=heads_per_branch,
+        branch_spacing_m=branch_spacing_m,
+        head_spacing_m=head_spacing_m,
+        bead_height_mm=0.0,
+        K1_base=K1_base,
+        K2_val=K2_val,
+        K3_val=K3_val,
+        equipment_k_factors=equipment_k_factors,
+        supply_pipe_size=supply_pipe_size,
+        branch_inlet_config=branch_inlet_config,
+    )
+    return round(0.1 + delta_p["delta_p_total_mpa"], 4)
+
+
+@contextmanager
+def _override_constants(**overrides):
+    """상수 임시 변경 context manager (Cat C용). finally로 반드시 복원."""
+    originals = {}
+    try:
+        for key, val in overrides.items():
+            originals[key] = getattr(constants, key)
+            setattr(constants, key, val)
+        if "EPSILON_MM" in overrides:
+            originals["EPSILON_M"] = constants.EPSILON_M
+            constants.EPSILON_M = overrides["EPSILON_MM"] / 1000.0
+        importlib.reload(hydraulics)
+        importlib.reload(pn)
+        yield
+    finally:
+        for key, val in originals.items():
+            setattr(constants, key, val)
+        importlib.reload(hydraulics)
+        importlib.reload(pn)
+
+
+def _verify_close(actual, expected, name, tol=0.001):
+    """결과값 검증 (soft — 실패해도 중단하지 않음)"""
+    if abs(actual - expected) < tol:
+        print(f"    검증 PASS: {name} = {actual:.4f}")
+        return True
+    print(f"    검증 FAIL: {name} = {actual:.4f} (기대: {expected:.4f})")
+    return False
+
+
+def _run_comparison(p_ref, flow_lpm, bead_h,
+                    nb, hpb, sp_b, sp_h,
+                    equip, supply, inlet_cfg,
+                    K1_b=K1_BASE, K2_v=K2, K3_v=K3):
+    """compare_dynamic_cases 래퍼 — 공통 호출 패턴 축약"""
+    return pn.compare_dynamic_cases(
+        num_branches=nb,
+        heads_per_branch=hpb,
+        branch_spacing_m=sp_b,
+        head_spacing_m=sp_h,
+        inlet_pressure_mpa=p_ref,
+        total_flow_lpm=flow_lpm,
+        bead_height_existing=bead_h,
+        bead_height_new=0.0,
+        K1_base=K1_b,
+        K2_val=K2_v,
+        K3_val=K3_v,
+        equipment_k_factors=equip,
+        supply_pipe_size=supply,
+        branch_inlet_config=inlet_cfg,
+    )
+
+
+# ── Category A: 건물 규모 일반화 ──
+
+def run_cat_A(data_dir, fig_dir):
+    """Cat A: Small / Medium / Large 3개 규모에서 Case A/B 비교 + 높이 스윕"""
+    print("\n  [A] 건물 규모 일반화 시작")
+
+    SCALE_CONFIGS = [
+        {"name": "Small",  "nb": 2,  "hpb": 6,  "inlet_cfg": "65A-65A", "supply": "80A"},
+        {"name": "Medium", "nb": 4,  "hpb": 8,  "inlet_cfg": "80A-65A", "supply": "100A"},
+        {"name": "Large",  "nb": 6,  "hpb": 10, "inlet_cfg": "80A-65A", "supply": "100A"},
+    ]
+    heights = [0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0]
+
+    summary_rows = []
+    height_comparison = {h: {} for h in heights}
+
+    for sc in SCALE_CONFIGS:
+        name = sc["name"]
+        nb, hpb = sc["nb"], sc["hpb"]
+        total_heads = nb * hpb
+        flow = total_heads * 80.0
+        print(f"    {name}: {nb}가지×{hpb}헤드={total_heads}개, Q={flow} LPM")
+
+        # P_ref 산출
+        p_ref_sc = _calculate_p_ref_for_config(
+            total_flow_lpm=flow,
+            num_branches=nb, heads_per_branch=hpb,
+            branch_spacing_m=BRANCH_SPACING_M, head_spacing_m=HEAD_SPACING_M,
+            equipment_k_factors=EQUIPMENT_K_FACTORS,
+            supply_pipe_size=sc["supply"],
+            branch_inlet_config=sc["inlet_cfg"],
+        )
+        print(f"      P_ref = {p_ref_sc:.4f} MPa")
+
+        # A-1: 설계점 비교
+        comp = _run_comparison(
+            p_ref=p_ref_sc, flow_lpm=flow,
+            bead_h=BEAD_HEIGHT_MM,
+            nb=nb, hpb=hpb,
+            sp_b=BRANCH_SPACING_M, sp_h=HEAD_SPACING_M,
+            equip=EQUIPMENT_K_FACTORS, supply=sc["supply"],
+            inlet_cfg=sc["inlet_cfg"],
+        )
+
+        # B1 CSV (Small, Large만 — Medium은 기존 데이터 사용)
+        if name != "Medium":
+            b1_df = pd.DataFrame([{
+                "항목": "Case A (기존 용접)",
+                "말단압력 (MPa)": round(comp["terminal_A_mpa"], 4),
+                "배관손실 (MPa)": round(comp["system_A"]["loss_pipe_mpa"], 4),
+                "이음쇠손실 (MPa)": round(comp["system_A"]["loss_fitting_mpa"], 4),
+                "비드손실 (MPa)": round(comp["system_A"]["loss_bead_mpa"], 4),
+                "장비손실 (MPa)": round(comp["system_A"]["equipment_loss_mpa"], 4),
+                "PASS/FAIL": "PASS" if comp["pass_fail_A"] else "FAIL",
+            }, {
+                "항목": "Case B (신공법)",
+                "말단압력 (MPa)": round(comp["terminal_B_mpa"], 4),
+                "배관손실 (MPa)": round(comp["system_B"]["loss_pipe_mpa"], 4),
+                "이음쇠손실 (MPa)": round(comp["system_B"]["loss_fitting_mpa"], 4),
+                "비드손실 (MPa)": round(comp["system_B"]["loss_bead_mpa"], 4),
+                "장비손실 (MPa)": round(comp["system_B"]["equipment_loss_mpa"], 4),
+                "PASS/FAIL": "PASS" if comp["pass_fail_B"] else "FAIL",
+            }])
+            save_csv(b1_df, data_dir / f"A_{name}_B1_comparison.csv")
+
+        # 요약 행
+        summary_rows.append({
+            "scale": name,
+            "num_branches": nb,
+            "heads_per_branch": hpb,
+            "total_heads": total_heads,
+            "flow_lpm": flow,
+            "branch_inlet_config": sc["inlet_cfg"],
+            "supply_pipe_size": sc["supply"],
+            "cross_main_size": comp["cross_main_size"],
+            "P_ref_mpa": p_ref_sc,
+            "terminal_A_mpa": round(comp["terminal_A_mpa"], 4),
+            "terminal_B_mpa": round(comp["terminal_B_mpa"], 4),
+            "improvement_pct": round(comp["improvement_pct"], 2),
+            "bead_loss_mpa": round(comp["system_A"]["loss_bead_mpa"], 4),
+            "pass_A": "PASS" if comp["pass_fail_A"] else "FAIL",
+            "pass_B": "PASS" if comp["pass_fail_B"] else "FAIL",
+        })
+
+        # A-2: 높이 스윕
+        h_rows = []
+        for h in heights:
+            c = _run_comparison(
+                p_ref=p_ref_sc, flow_lpm=flow,
+                bead_h=h,
+                nb=nb, hpb=hpb,
+                sp_b=BRANCH_SPACING_M, sp_h=HEAD_SPACING_M,
+                equip=EQUIPMENT_K_FACTORS, supply=sc["supply"],
+                inlet_cfg=sc["inlet_cfg"],
+            )
+            h_rows.append({
+                "bead_height_mm": h,
+                "terminal_A_mpa": round(c["terminal_A_mpa"], 4),
+                "terminal_B_mpa": round(c["terminal_B_mpa"], 4),
+                "improvement_pct": round(c["improvement_pct"], 2),
+                "pass_A": c["pass_fail_A"],
+                "pass_B": c["pass_fail_B"],
+            })
+            height_comparison[h][f"terminal_A_{name}"] = round(c["terminal_A_mpa"], 4)
+            height_comparison[h][f"terminal_B_{name}"] = round(c["terminal_B_mpa"], 4)
+
+        if name != "Medium":
+            save_csv(pd.DataFrame(h_rows), data_dir / f"A_{name}_H1_height_sweep.csv")
+
+    # Medium 검증
+    med = [r for r in summary_rows if r["scale"] == "Medium"][0]
+    _verify_close(med["P_ref_mpa"], 0.5318, "Medium P_ref")
+    _verify_close(med["terminal_A_mpa"], 0.0632, "Medium terminal_A")
+
+    # 요약 CSV
+    save_csv(pd.DataFrame(summary_rows), data_dir / "A_scale_summary.csv")
+
+    # 높이 비교 CSV
+    hc_rows = []
+    for h in heights:
+        row = {"bead_height_mm": h}
+        row.update(height_comparison[h])
+        hc_rows.append(row)
+    save_csv(pd.DataFrame(hc_rows), data_dir / "A_scale_height_comparison.csv")
+
+    # ── 그래프 A1: 규모별 막대 ──
+    fig, ax = plt.subplots(figsize=(10, 6))
+    x = range(len(summary_rows))
+    names = [r["scale"] for r in summary_rows]
+    term_a = [r["terminal_A_mpa"] for r in summary_rows]
+    term_b = [r["terminal_B_mpa"] for r in summary_rows]
+    w = 0.35
+    ax.bar([i - w/2 for i in x], term_a, w, label="Case A (기존)", color="#F44336", alpha=0.8)
+    ax.bar([i + w/2 for i in x], term_b, w, label="Case B (신공법)", color="#2196F3", alpha=0.8)
+    ax.axhline(y=PASS_THRESHOLD_MPA, color="green", linestyle="--", linewidth=2,
+               label=f"기준: {PASS_THRESHOLD_MPA} MPa")
+    ax.set_xticks(list(x))
+    ax.set_xticklabels(names)
+    ax.set_ylabel("말단 압력 (MPa)")
+    ax.set_title("건물 규모별 말단 압력 비교 (h=1.5mm, n=4)")
+    ax.legend()
+    ax.grid(True, alpha=0.3, axis="y")
+    save_fig(fig, fig_dir / "fig_A1_scale_comparison_bar.png")
+
+    # ── 그래프 A2: 규모별 높이-말단압력 곡선 ──
+    fig, ax = plt.subplots(figsize=(10, 6))
+    colors_map = {"Small": "#FF9800", "Medium": "#F44336", "Large": "#9C27B0"}
+    for sc in SCALE_CONFIGS:
+        name = sc["name"]
+        vals = [height_comparison[h].get(f"terminal_A_{name}", None) for h in heights]
+        ax.plot(heights, vals, "-o", label=f"{name} (Case A)", color=colors_map[name], markersize=5)
+    ax.axhline(y=PASS_THRESHOLD_MPA, color="green", linestyle="--", linewidth=2, alpha=0.7)
+    ax.set_xlabel("비드 높이 (mm)")
+    ax.set_ylabel("말단 압력 (MPa)")
+    ax.set_title("규모별 비드 높이에 따른 말단 압력 (Case A)")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    save_fig(fig, fig_dir / "fig_A2_scale_height_curves.png")
+
+    print("  [A] 완료")
+
+
+# ── Category C: 모델 강건성 ──
+
+def run_cat_C(data_dir, fig_dir):
+    """Cat C: C-1 관 조도(ε) 민감도 + C-2 K_base 민감도"""
+    print("\n  [C] 모델 강건성 시작")
+
+    # ─── C-1: 관 조도 민감도 ───
+    print("    C-1: 관 조도(ε) 민감도")
+    epsilons = [0.030, 0.046, 0.060, 0.100]
+    r1_rows = []
+    for eps in epsilons:
+        with _override_constants(EPSILON_MM=eps):
+            p_ref_e = _calculate_p_ref_for_config(
+                total_flow_lpm=DESIGN_FLOW_LPM,
+                num_branches=NUM_BRANCHES, heads_per_branch=HEADS_PER_BRANCH,
+                branch_spacing_m=BRANCH_SPACING_M, head_spacing_m=HEAD_SPACING_M,
+                equipment_k_factors=EQUIPMENT_K_FACTORS,
+                supply_pipe_size=SUPPLY_PIPE_SIZE,
+                branch_inlet_config=BRANCH_INLET_CONFIG,
+            )
+            comp = pn.compare_dynamic_cases(
+                num_branches=NUM_BRANCHES, heads_per_branch=HEADS_PER_BRANCH,
+                branch_spacing_m=BRANCH_SPACING_M, head_spacing_m=HEAD_SPACING_M,
+                inlet_pressure_mpa=p_ref_e,
+                total_flow_lpm=DESIGN_FLOW_LPM,
+                bead_height_existing=BEAD_HEIGHT_MM, bead_height_new=0.0,
+                equipment_k_factors=EQUIPMENT_K_FACTORS,
+                supply_pipe_size=SUPPLY_PIPE_SIZE,
+                branch_inlet_config=BRANCH_INLET_CONFIG,
+            )
+        r1_rows.append({
+            "epsilon_mm": eps,
+            "P_ref_mpa": p_ref_e,
+            "terminal_A_mpa": round(comp["terminal_A_mpa"], 4),
+            "terminal_B_mpa": round(comp["terminal_B_mpa"], 4),
+            "improvement_pct": round(comp["improvement_pct"], 2),
+            "bead_loss_mpa": round(comp["system_A"]["loss_bead_mpa"], 4),
+            "pass_A": "PASS" if comp["pass_fail_A"] else "FAIL",
+            "pass_B": "PASS" if comp["pass_fail_B"] else "FAIL",
+        })
+        print(f"      ε={eps}: P_ref={p_ref_e:.4f}, term_A={comp['terminal_A_mpa']:.4f}")
+    df_r1 = pd.DataFrame(r1_rows)
+    save_csv(df_r1, data_dir / "R1_roughness_sensitivity.csv")
+
+    # C-1 검증: ε=0.046이 기준값과 일치
+    base_r1 = df_r1[df_r1["epsilon_mm"] == 0.046]
+    if len(base_r1) > 0:
+        _verify_close(base_r1.iloc[0]["P_ref_mpa"], 0.5318, "C-1 ε=0.046 P_ref")
+
+    # ─── C-2: K_base 민감도 ───
+    print("    C-2: K_base 민감도")
+    k_bases = [0.3, 0.5, 0.7, 1.0]
+    r2_rows = []
+    for kb in k_bases:
+        # K_base는 함수 파라미터로 전달 가능 (constants 변경 불필요)
+        p_ref_k = _calculate_p_ref_for_config(
+            total_flow_lpm=DESIGN_FLOW_LPM,
+            num_branches=NUM_BRANCHES, heads_per_branch=HEADS_PER_BRANCH,
+            branch_spacing_m=BRANCH_SPACING_M, head_spacing_m=HEAD_SPACING_M,
+            equipment_k_factors=EQUIPMENT_K_FACTORS,
+            supply_pipe_size=SUPPLY_PIPE_SIZE,
+            branch_inlet_config=BRANCH_INLET_CONFIG,
+            K1_base=kb,
+        )
+        comp = pn.compare_dynamic_cases(
+            num_branches=NUM_BRANCHES, heads_per_branch=HEADS_PER_BRANCH,
+            branch_spacing_m=BRANCH_SPACING_M, head_spacing_m=HEAD_SPACING_M,
+            inlet_pressure_mpa=p_ref_k,
+            total_flow_lpm=DESIGN_FLOW_LPM,
+            bead_height_existing=BEAD_HEIGHT_MM, bead_height_new=0.0,
+            K1_base=kb,
+            equipment_k_factors=EQUIPMENT_K_FACTORS,
+            supply_pipe_size=SUPPLY_PIPE_SIZE,
+            branch_inlet_config=BRANCH_INLET_CONFIG,
+        )
+        r2_rows.append({
+            "K1_base": kb,
+            "P_ref_mpa": p_ref_k,
+            "terminal_A_mpa": round(comp["terminal_A_mpa"], 4),
+            "terminal_B_mpa": round(comp["terminal_B_mpa"], 4),
+            "improvement_pct": round(comp["improvement_pct"], 2),
+            "bead_loss_mpa": round(comp["system_A"]["loss_bead_mpa"], 4),
+            "pass_A": "PASS" if comp["pass_fail_A"] else "FAIL",
+            "pass_B": "PASS" if comp["pass_fail_B"] else "FAIL",
+        })
+        print(f"      K={kb}: P_ref={p_ref_k:.4f}, term_A={comp['terminal_A_mpa']:.4f}")
+    df_r2 = pd.DataFrame(r2_rows)
+    save_csv(df_r2, data_dir / "R2_Kbase_sensitivity.csv")
+
+    # C-2 검증: K=0.5가 기준값과 일치
+    base_r2 = df_r2[df_r2["K1_base"] == 0.5]
+    if len(base_r2) > 0:
+        _verify_close(base_r2.iloc[0]["P_ref_mpa"], 0.5318, "C-2 K=0.5 P_ref")
+
+    # 상수 복원 확인
+    assert constants.EPSILON_MM == 0.046, f"상수 복원 실패: EPSILON_MM={constants.EPSILON_MM}"
+    print("    상수 복원 확인 OK")
+
+    # ── 그래프 C1: 조도 민감도 ──
+    fig, ax = plt.subplots(figsize=(10, 6))
+    x = range(len(epsilons))
+    ax.bar([i - 0.175 for i in x], df_r1["terminal_A_mpa"], 0.35,
+           label="Case A (기존)", color="#F44336", alpha=0.8)
+    ax.bar([i + 0.175 for i in x], df_r1["terminal_B_mpa"], 0.35,
+           label="Case B (신공법)", color="#2196F3", alpha=0.8)
+    ax.axhline(y=PASS_THRESHOLD_MPA, color="green", linestyle="--", linewidth=2)
+    ax.set_xticks(list(x))
+    ax.set_xticklabels([f"ε={e}" for e in epsilons])
+    ax.set_ylabel("말단 압력 (MPa)")
+    ax.set_title("관 조도(ε) 변화에 따른 말단 압력")
+    ax.legend()
+    ax.grid(True, alpha=0.3, axis="y")
+    save_fig(fig, fig_dir / "fig_C1_roughness_sensitivity.png")
+
+    # ── 그래프 C2: K_base 민감도 ──
+    fig, ax = plt.subplots(figsize=(10, 6))
+    x = range(len(k_bases))
+    ax.bar([i - 0.175 for i in x], df_r2["terminal_A_mpa"], 0.35,
+           label="Case A (기존)", color="#F44336", alpha=0.8)
+    ax.bar([i + 0.175 for i in x], df_r2["terminal_B_mpa"], 0.35,
+           label="Case B (신공법)", color="#2196F3", alpha=0.8)
+    ax.axhline(y=PASS_THRESHOLD_MPA, color="green", linestyle="--", linewidth=2)
+    ax.set_xticks(list(x))
+    ax.set_xticklabels([f"K={k}" for k in k_bases])
+    ax.set_ylabel("말단 압력 (MPa)")
+    ax.set_title("K_base 변화에 따른 말단 압력")
+    ax.legend()
+    ax.grid(True, alpha=0.3, axis="y")
+    save_fig(fig, fig_dir / "fig_C2_Kbase_sensitivity.png")
+
+    print("  [C] 완료")
+
+
+# ── Category D: 헤드 간격 민감도 ──
+
+def run_cat_D(data_dir, fig_dir):
+    """Cat D: 헤드 간격 4개 값에 대한 민감도 분석"""
+    print("\n  [D] 헤드 간격 민감도 시작")
+
+    spacings = [1.8, 2.1, 2.4, 3.0]
+    rows = []
+    for sp in spacings:
+        p_ref_sp = _calculate_p_ref_for_config(
+            total_flow_lpm=DESIGN_FLOW_LPM,
+            num_branches=NUM_BRANCHES, heads_per_branch=HEADS_PER_BRANCH,
+            branch_spacing_m=BRANCH_SPACING_M, head_spacing_m=sp,
+            equipment_k_factors=EQUIPMENT_K_FACTORS,
+            supply_pipe_size=SUPPLY_PIPE_SIZE,
+            branch_inlet_config=BRANCH_INLET_CONFIG,
+        )
+        comp = _run_comparison(
+            p_ref=p_ref_sp, flow_lpm=DESIGN_FLOW_LPM,
+            bead_h=BEAD_HEIGHT_MM,
+            nb=NUM_BRANCHES, hpb=HEADS_PER_BRANCH,
+            sp_b=BRANCH_SPACING_M, sp_h=sp,
+            equip=EQUIPMENT_K_FACTORS, supply=SUPPLY_PIPE_SIZE,
+            inlet_cfg=BRANCH_INLET_CONFIG,
+        )
+        rows.append({
+            "head_spacing_m": sp,
+            "P_ref_mpa": p_ref_sp,
+            "terminal_A_mpa": round(comp["terminal_A_mpa"], 4),
+            "terminal_B_mpa": round(comp["terminal_B_mpa"], 4),
+            "improvement_pct": round(comp["improvement_pct"], 2),
+            "bead_loss_mpa": round(comp["system_A"]["loss_bead_mpa"], 4),
+            "pass_A": "PASS" if comp["pass_fail_A"] else "FAIL",
+            "pass_B": "PASS" if comp["pass_fail_B"] else "FAIL",
+        })
+        print(f"    sp={sp}m: P_ref={p_ref_sp:.4f}, term_A={comp['terminal_A_mpa']:.4f}")
+    df = pd.DataFrame(rows)
+    save_csv(df, data_dir / "SP1_spacing_sensitivity.csv")
+
+    # 검증: sp=2.1 = 기준값
+    base_d = df[df["head_spacing_m"] == 2.1]
+    if len(base_d) > 0:
+        _verify_close(base_d.iloc[0]["P_ref_mpa"], 0.5318, "D sp=2.1 P_ref")
+
+    # ── 그래프 D1: 간격별 말단압력 ──
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(df["head_spacing_m"], df["terminal_A_mpa"], "r-o",
+            label="Case A (기존)", markersize=8)
+    ax.plot(df["head_spacing_m"], df["terminal_B_mpa"], "b-s",
+            label="Case B (신공법)", markersize=8)
+    ax.axhline(y=PASS_THRESHOLD_MPA, color="green", linestyle="--", linewidth=2,
+               label=f"기준: {PASS_THRESHOLD_MPA} MPa")
+    ax.set_xlabel("헤드 간격 (m)")
+    ax.set_ylabel("말단 압력 (MPa)")
+    ax.set_title("헤드 간격 변화에 따른 말단 압력")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    save_fig(fig, fig_dir / "fig_D1_spacing_sensitivity.png")
+
+    print("  [D] 완료")
+
+
+# ── Stage 4 보고서 + 오케스트레이터 ──
+
+def generate_stage4_report(data_dir, fig_dir, p_ref):
+    """4단계 DOCX 보고서"""
+    print("\n  4단계 DOCX 보고서 생성 중...")
+    sections = [
+        {
+            "title": "Cat A: 규모별 설계점 비교 (요약)",
+            "description": f"Small(2×6=12), Medium(4×8=32), Large(6×10=60) 3개 규모 비교. "
+                          f"각 규모별 P_ref 재계산, Case A/B 비교 결과입니다.",
+            "csv_file": "A_scale_summary.csv",
+            "figures": ["fig_A1_scale_comparison_bar.png"],
+        },
+        {
+            "title": "Cat A: 규모별 높이 스윕 비교",
+            "description": "3개 규모에서 비드 높이 0~3mm 범위 스윕 비교입니다.",
+            "csv_file": "A_scale_height_comparison.csv",
+            "figures": ["fig_A2_scale_height_curves.png"],
+        },
+        {
+            "title": "Cat C-1: 관 조도(ε) 민감도",
+            "description": "ε = [0.030, 0.046, 0.060, 0.100] mm 4개 값. 각 ε마다 P_ref 재계산.",
+            "csv_file": "R1_roughness_sensitivity.csv",
+            "figures": ["fig_C1_roughness_sensitivity.png"],
+        },
+        {
+            "title": "Cat C-2: K_base 민감도",
+            "description": "K1_base = [0.3, 0.5, 0.7, 1.0] 4개 값. 각 K마다 P_ref 재계산.",
+            "csv_file": "R2_Kbase_sensitivity.csv",
+            "figures": ["fig_C2_Kbase_sensitivity.png"],
+        },
+        {
+            "title": "Cat D: 헤드 간격 민감도",
+            "description": "head_spacing = [1.8, 2.1, 2.4, 3.0] m 4개 값. 각 간격마다 P_ref 재계산.",
+            "csv_file": "SP1_spacing_sensitivity.csv",
+            "figures": ["fig_D1_spacing_sensitivity.png"],
+        },
+    ]
+    _create_docx_report(
+        "4단계: 리비전 추가 분석 보고서",
+        STAGE4_DIR, data_dir, fig_dir, sections
+    )
+
+
+def run_stage4(p_ref_medium, category=None):
+    """4단계: 리비전 추가 시뮬레이션 (Category A~D)"""
+    print("\n" + "=" * 60)
+    print("  4단계: 리비전 추가 시뮬레이션")
+    print("=" * 60)
+    t0 = time.time()
+
+    data_dir = STAGE4_DIR / "data"
+    fig_dir = STAGE4_DIR / "figures"
+    for d in [data_dir, fig_dir]:
+        d.mkdir(parents=True, exist_ok=True)
+
+    if category is None or category == "A":
+        run_cat_A(data_dir, fig_dir)
+    if category is None or category == "C":
+        run_cat_C(data_dir, fig_dir)
+    if category is None or category == "D":
+        run_cat_D(data_dir, fig_dir)
+
+    if category is None:
+        generate_stage4_report(data_dir, fig_dir, p_ref_medium)
+
+    print(f"\n  4단계 완료 (소요시간: {elapsed(t0)})")
+
+
+# ══════════════════════════════════════════════
 #  메인 실행
 # ══════════════════════════════════════════════
 
@@ -1882,8 +2282,10 @@ def main():
     parser = argparse.ArgumentParser(
         description="FiPLSim 논문용 배치 자동화 스크립트"
     )
-    parser.add_argument("--stage", type=int, choices=[1, 2, 3],
+    parser.add_argument("--stage", type=int, choices=[1, 2, 3, 4],
                         help="실행할 단계 (생략 시 전체 실행)")
+    parser.add_argument("--category", type=str, choices=["A", "B", "C", "D"],
+                        help="4단계 개별 카테고리 실행 (--stage 4와 함께 사용)")
     parser.add_argument("--additional1", action="store_true",
                         help="추가1: 비드 높이 × 입구 압력 2D 스윕")
     args = parser.parse_args()
@@ -1900,6 +2302,14 @@ def main():
     # 추가 시뮬레이션 모드
     if args.additional1:
         run_additional1()
+        print(f"\n  총 소요시간: {elapsed(t_total)}")
+        return
+
+    # Stage 4 단독 실행 모드
+    if args.stage == 4:
+        p_ref = load_p_ref()
+        print(f"\n  저장된 P_ref = {p_ref:.4f} MPa 로드됨")
+        run_stage4(p_ref, category=args.category)
         print(f"\n  총 소요시간: {elapsed(t_total)}")
         return
 

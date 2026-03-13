@@ -40,7 +40,12 @@ def get_inner_diameter_m(nominal_size: str) -> float:
 # ? K-factor 기본값
 # ──────────────────────────────────────────────
 K1_BASE = 0.5        # 배관이음쇠 (Welded Fitting) 기본 K — 비드 0mm 기준
-K2 = 2.5             # 헤드이음쇠 (Head Fitting) 고유 저항 계수 (상수)
+K2 = 2.5             # 헤드이음쇠 (Head Fitting) 고유 저항 계수 — 헤드이음쇠 있을 때
+K2_WITH_HEAD_FITTING = 2.5      # 배관이음쇠 + 헤드이음쇠 + 헤드 구조 (T분기 1.4 + 헤드이음쇠 1.1)
+K2_WITHOUT_HEAD_FITTING = 1.4   # 배관이음쇠 + 헤드 직접 연결 — Crane TP-410 (K = 60 × fT, Tee branch flow)
+#   출처: Crane Technical Paper 410, "Flow of Fluids Through Valves, Fittings, and Pipe"
+#   T분기 흐름(Branch Flow): K = 60 × fT, fT ≈ 0.023 (50A) ~ 0.026 (25A) → K ≈ 1.38 ~ 1.56
+DEFAULT_USE_HEAD_FITTING = True  # 기본: 헤드이음쇠 사용
 K3 = 1.0             # 분기 손실 (교차배관 → 가지배관 분기 입구, Tee-Branch)
 K_TEE_RUN = 0.3      # 교차배관 직진 손실 (Tee-Run, 분기 후 직진 흐름)
 
@@ -169,11 +174,28 @@ BRANCH_INLET_CONFIGS = {
 DEFAULT_BRANCH_INLET_CONFIG = "80A-50A"
 
 # ──────────────────────────────────────────────
-# ? 용접 비드 국부 손실 파라미터
-#   가지배관 직관 구간 내 무작위 배치되는 용접 비드 개수
+# ? 레듀서(점축소) 국부 손실 파라미터
+#   가지배관 관경 전환점(50A→40A 등)의 레듀서 K값
+#   출처: Crane Technical Paper 410, "Flow of Fluids Through Valves, Fittings, and Pipe"
+#         ASME B16.9, "Factory-Made Wrought Buttwelding Fittings"
+#   참고: NFPA 13 / NFPC 103에서는 레듀서 등가길이를 별도 규정하지 않음 (생략 관행)
 # ──────────────────────────────────────────────
-DEFAULT_BEADS_PER_BRANCH = 5      # 가지배관당 용접 비드 기본 개수
-MAX_BEADS_PER_BRANCH = 20         # 가지배관당 용접 비드 최대 개수
+REDUCER_MODE_CRANE = "crane"          # Crane TP-410 점진축소: K = 0.8 × sin(θ/2) × (1-β²)
+REDUCER_MODE_SUDDEN = "sudden"        # 급축소 이론식: K = 0.5 × (1-β²)
+REDUCER_MODE_FIXED = "fixed"          # 사용자 지정 고정값
+REDUCER_MODE_NONE = "none"            # 무시 (NFPA 13 관행)
+DEFAULT_REDUCER_MODE = REDUCER_MODE_CRANE
+DEFAULT_REDUCER_K_FIXED = 0.05        # 고정 모드 기본값 (Bentley HAMMER 참조)
+
+# ASME B16.9 레듀서 원뿔 각도 (도, degree)
+# theta = 2 × arctan((OD1 - OD2) / (2 × H))
+# OD: 외경 (ASME B16.9 Table), H: 레듀서 end-to-end 길이
+REDUCER_ANGLES_DEG = {
+    ("65A", "50A"): 8.1,   # OD 73.0→60.3, H=89mm
+    ("50A", "40A"): 9.0,   # OD 60.3→48.3, H=76mm
+    ("40A", "32A"): 5.5,   # OD 48.3→42.2, H=64mm
+    ("32A", "25A"): 9.8,   # OD 42.2→33.4, H=51mm
+}
 
 # ──────────────────────────────────────────────
 # ? 기본 시뮬레이션 파라미터
@@ -183,8 +205,8 @@ DEFAULT_TOTAL_FLOW_LPM = 400.0
 DEFAULT_FITTING_SPACING_M = 2.3
 FITTING_SPACING_OPTIONS = [1.7, 2.1, 2.3, 2.5, 3.2]  # 선택 가능한 이음쇠 간격 (m)
 DEFAULT_BEAD_HEIGHT_MM = 1.5       # 기존 용접 기술
-DEFAULT_BEAD_HEIGHT_STD_MM = 0.5   # 비드 높이 표준편차 기본값 (mm) — 비균일 모델
-MAX_BEAD_HEIGHT_STD_MM = 2.0       # 비드 높이 표준편차 최대값 (mm)
+DEFAULT_BEAD_HEIGHT_STD_MM = 0.5   # 이음쇠 비드 높이 표준편차 기본값 (mm) — 비균일 모델
+MAX_BEAD_HEIGHT_STD_MM = 2.0       # 이음쇠 비드 높이 표준편차 최대값 (mm)
 MIN_TERMINAL_PRESSURE_MPA = 0.1    # 말단 최소 방수압 기준 (NFPC 103)
 MAX_TERMINAL_PRESSURE_MPA = 1.2    # 말단 최대 방수압 기준 (NFPC 103)
 MIN_HEAD_FLOW_LPM = 80.0           # 헤드 1개당 최소 방수량 (L/min, NFPC 103)

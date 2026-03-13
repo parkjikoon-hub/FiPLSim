@@ -25,8 +25,8 @@ from constants import (
     DEFAULT_NUM_BRANCHES, DEFAULT_HEADS_PER_BRANCH,
     DEFAULT_BRANCH_SPACING_M, DEFAULT_HEAD_SPACING_M,
     MAX_BRANCHES, MAX_HEADS_PER_BRANCH,
-    DEFAULT_BEADS_PER_BRANCH, MAX_BEADS_PER_BRANCH,
     K1_BASE, K2, K3,
+    DEFAULT_USE_HEAD_FITTING, DEFAULT_REDUCER_MODE, DEFAULT_REDUCER_K_FIXED,
     HC_RELAXATION_FACTOR, HC_RELAXATION_MIN, HC_RELAXATION_MAX,
     DEFAULT_EQUIPMENT_K_FACTORS, DEFAULT_SUPPLY_PIPE_SIZE,
 )
@@ -339,20 +339,26 @@ if use_bead_variation:
 else:
     bead_height_std = 0.0
 
-beads_per_branch = st.sidebar.number_input(
-    "가지배관당 용접 비드 개수 (개)",
-    min_value=0, max_value=MAX_BEADS_PER_BRANCH, value=DEFAULT_BEADS_PER_BRANCH, step=1,
-    help="각 가지배관의 직관 구간(헤드 사이 배관) 내에 배치되는 용접 비드의 개수입니다. "
-         "몬테카를로 시뮬레이션 시 매 반복마다 비드 위치가 무작위로 재배치되어 "
-         "위치 변화에 따른 말단 압력 산포도(Variance)를 분석합니다. "
-         f"범위: 0~{MAX_BEADS_PER_BRANCH}개, 0이면 직관 용접 비드 미적용.",
+# ── 3.5a. 헤드이음쇠 / 레듀서 설정 ──
+use_head_fitting = st.sidebar.checkbox(
+    "헤드이음쇠 사용",
+    value=DEFAULT_USE_HEAD_FITTING,
+    help="체크: 배관이음쇠+헤드이음쇠+헤드 구조 (K2=2.5) / "
+         "해제: 배관이음쇠+헤드 직접 연결 (K2=1.4, Crane TP-410)",
 )
-total_weld_beads = beads_per_branch * num_branches
-if beads_per_branch > 0:
-    st.sidebar.caption(
-        f"직관 용접 비드: 가지배관당 **{beads_per_branch}개** × "
-        f"{num_branches}개 = 전체 **{total_weld_beads}개**"
-    )
+reducer_mode = st.sidebar.selectbox(
+    "레듀서 손실 모드",
+    options=["crane", "sudden", "fixed", "none"],
+    format_func=lambda x: {
+        "crane": "Crane TP-410 (기본, 권장)",
+        "sudden": "급축소 (보수적)",
+        "fixed": "고정값 (K=0.05)",
+        "none": "무시 (NFPA 13 관행)",
+    }[x],
+    help="관경 전환점(65A→50A 등)의 레듀서 국부 손실 계산 방식입니다. "
+         "출처: Crane Technical Paper 410, ASME B16.9",
+)
+reducer_k_fixed = DEFAULT_REDUCER_K_FIXED
 
 # ── 3.5. 밸브/기기류 국부 손실 ──
 st.sidebar.header(":material/valve: 추가 기기 손실 (밸브류)")
@@ -461,7 +467,9 @@ if run_button or "results" in st.session_state:
                     total_flow_lpm=float(design_flow),
                     bead_height_existing=bead_height,
                     bead_height_new=0.0,
-                    beads_per_branch=beads_per_branch,
+                    use_head_fitting=use_head_fitting,
+                    reducer_mode=reducer_mode,
+                    reducer_k_fixed=reducer_k_fixed,
                     relaxation=hc_relaxation,
                     equipment_k_factors=equipment_k_factors,
                     supply_pipe_size=supply_pipe_size,
@@ -497,8 +505,9 @@ if run_button or "results" in st.session_state:
                     num_branches=num_branches, heads_per_branch=heads_per_branch,
                     branch_spacing_m=branch_spacing, head_spacing_m=head_spacing,
                     bead_heights_2d=beads_A_2d,
-                    beads_per_branch=beads_per_branch,
-                    bead_height_for_weld_mm=bead_height,
+                    use_head_fitting=use_head_fitting,
+                    reducer_mode=reducer_mode,
+                    reducer_k_fixed=reducer_k_fixed,
                     topology=topology_key,
                     relaxation=hc_relaxation,
                 )
@@ -506,7 +515,9 @@ if run_button or "results" in st.session_state:
                     num_branches=num_branches, heads_per_branch=heads_per_branch,
                     branch_spacing_m=branch_spacing, head_spacing_m=head_spacing,
                     bead_heights_2d=beads_B_2d,
-                    beads_per_branch=0,
+                    use_head_fitting=use_head_fitting,
+                    reducer_mode=reducer_mode,
+                    reducer_k_fixed=reducer_k_fixed,
                     topology=topology_key,
                     relaxation=hc_relaxation,
                 )
@@ -531,7 +542,9 @@ if run_button or "results" in st.session_state:
                     branch_spacing_m=branch_spacing, head_spacing_m=head_spacing,
                     inlet_pressure_mpa=inlet_pressure,
                     total_flow_lpm=float(design_flow),
-                    beads_per_branch=beads_per_branch,
+                    use_head_fitting=use_head_fitting,
+                    reducer_mode=reducer_mode,
+                    reducer_k_fixed=reducer_k_fixed,
                     topology=topology_key,
                     relaxation=hc_relaxation,
                     equipment_k_factors=equipment_k_factors,
@@ -545,7 +558,9 @@ if run_button or "results" in st.session_state:
                     branch_spacing_m=branch_spacing, head_spacing_m=head_spacing,
                     inlet_pressure_mpa=inlet_pressure,
                     total_flow_lpm=float(design_flow),
-                    beads_per_branch=beads_per_branch,
+                    use_head_fitting=use_head_fitting,
+                    reducer_mode=reducer_mode,
+                    reducer_k_fixed=reducer_k_fixed,
                     topology=topology_key,
                     relaxation=hc_relaxation,
                     equipment_k_factors=equipment_k_factors,
@@ -566,7 +581,8 @@ if run_button or "results" in st.session_state:
                     "inlet_pressure": inlet_pressure,
                     "design_flow": design_flow,
                     "bead_height": bead_height,
-                    "beads_per_branch": beads_per_branch,
+                    "use_head_fitting": use_head_fitting,
+                    "reducer_mode": reducer_mode,
                     "pump_model": pump_model,
                     "topology": topology_key,
                     "equipment_k_factors": equipment_k_factors,
@@ -591,17 +607,16 @@ if run_button or "results" in st.session_state:
 
     # ── KPI 대시보드 ──
     st.markdown("---")
-    bpb_display = params.get("beads_per_branch", 0)
     topo_display = params.get("topology", "tree")
     topo_label = "Full Grid (격자형)" if topo_display == "grid" else "Tree (가지형)"
+    hf_label = "헤드이음쇠 사용" if params.get("use_head_fitting", True) else "헤드 직접 연결"
     sys_info = (
         f"**시스템**: {case_results['cross_main_size']} 교차배관 → "
         f"{n_b}개 가지배관 × {n_h}개 헤드 = **{case_results['total_heads']}개 헤드** | "
         f"토폴로지: **{topo_label}** | "
-        f"최악 가지배관: **B#{case_results['worst_branch_A']+1}** (Case A)"
+        f"최악 가지배관: **B#{case_results['worst_branch_A']+1}** (Case A) | "
+        f"K2: **{hf_label}** | 레듀서: **{params.get('reducer_mode', 'crane')}**"
     )
-    if bpb_display > 0:
-        sys_info += f" | 직관 용접 비드: 가지배관당 **{bpb_display}개**"
     # * 밸브/기기류 손실 정보
     equip_loss_A = case_results.get("system_A", {}).get("equipment_loss_mpa", 0.0)
     if equip_loss_A > 0:
@@ -830,10 +845,10 @@ if run_button or "results" in st.session_state:
                 "A K1": [d["K1_value"] for d in det_A],
                 "B K1": [d["K1_value"] for d in det_B],
             }
-            # * 용접 비드 정보 (있을 경우)
-            if det_A[0].get("weld_beads_in_seg") is not None:
-                detail_dict["A 비드수"] = [d["weld_beads_in_seg"] for d in det_A]
-                detail_dict["A 비드손실"] = [d["weld_bead_loss_mpa"] for d in det_A]
+            # * 레듀서 손실 정보 (있을 경우)
+            if det_A[0].get("reducer_loss_mpa") is not None:
+                detail_dict["A 레듀서"] = [d["reducer_loss_mpa"] for d in det_A]
+                detail_dict["B 레듀서"] = [d["reducer_loss_mpa"] for d in det_B]
             detail_dict.update({
                 "A 손실(MPa)": [d["total_seg_loss_mpa"] for d in det_A],
                 "B 손실(MPa)": [d["total_seg_loss_mpa"] for d in det_B],
@@ -958,15 +973,9 @@ if run_button or "results" in st.session_state:
     # ═══ Tab 3: 몬테카를로 ═══
     with tab3:
         st.subheader("몬테카를로 시뮬레이션 결과")
-        mc_bpb = mc_results.get("beads_per_branch", 0)
         mc_desc = (
             f"전체 **{mc_results['total_fittings']}개** 이음쇠 중 "
             f"무작위 {min_defects}~{max_defects}개 결함 비드"
-        )
-        if mc_bpb > 0:
-            mc_desc += (
-                f" + 가지배관당 **{mc_bpb}개** 직관 용접 비드 "
-                f"(전체 {mc_bpb * n_b}개, **매 반복 위치 무작위 재배치**)"
             )
         mc_desc += f" → {mc_iterations}회 반복"
         st.markdown(mc_desc)
@@ -1423,7 +1432,8 @@ if run_button or "results" in st.session_state:
     <tr><td>입구 압력</td><td>{params['inlet_pressure']} MPa</td></tr>
     <tr><td>설계 유량</td><td>{params['design_flow']} LPM</td></tr>
     <tr><td>기존 비드 높이 (Case A)</td><td>{params['bead_height']} mm</td></tr>
-    <tr><td>직관 용접 비드 수</td><td>가지배관당 {params.get('beads_per_branch', 0)}개</td></tr>
+    <tr><td>헤드이음쇠</td><td>{'사용 (K2=2.5)' if params.get('use_head_fitting', True) else '미사용 (K2=1.4)'}</td></tr>
+    <tr><td>레듀서 모드</td><td>{params.get('reducer_mode', 'crane')}</td></tr>
     <tr><td>펌프 모델</td><td>{params.get('pump_model', 'N/A')}</td></tr>
     <tr><td>몬테카를로 반복 횟수</td><td><strong>{mc_n}회</strong></td></tr>
     {grid_info_html}
@@ -1637,7 +1647,8 @@ if run_button or "results" in st.session_state:
                 ("입구 압력", f"{params['inlet_pressure']} MPa"),
                 ("설계 유량", f"{params['design_flow']} LPM"),
                 ("기존 비드 높이 (Case A)", f"{params['bead_height']} mm"),
-                ("직관 용접 비드 수", f"가지배관당 {params.get('beads_per_branch', 0)}개"),
+                ("헤드이음쇠", f"{'사용 (K2=2.5)' if params.get('use_head_fitting', True) else '미사용 (K2=1.4)'}"),
+                ("레듀서 모드", params.get("reducer_mode", "crane")),
                 ("펌프 모델", params.get("pump_model", "N/A")),
                 ("몬테카를로 반복 횟수", f"{mc_n}회"),
             ]
@@ -2376,7 +2387,9 @@ if run_button or "results" in st.session_state:
                     total_flow_lpm=float(design_flow),
                     bead_height_mm=bead_height,
                     bead_height_std_mm=bead_height_std,
-                    beads_per_branch=beads_per_branch,
+                    use_head_fitting=use_head_fitting,
+                    reducer_mode=reducer_mode,
+                    reducer_k_fixed=reducer_k_fixed,
                     topology=topology_key,
                     relaxation=hc_relaxation,
                     mc_iterations=mc_iterations,
@@ -2955,7 +2968,9 @@ if run_button or "results" in st.session_state:
                     head_spacing_m=head_spacing,
                     inlet_pressure_mpa=inlet_pressure,
                     total_flow_lpm=float(design_flow),
-                    beads_per_branch=beads_per_branch,
+                    use_head_fitting=use_head_fitting,
+                    reducer_mode=reducer_mode,
+                    reducer_k_fixed=reducer_k_fixed,
                     topology=topology_key,
                     relaxation=hc_relaxation,
                     equipment_k_factors=equipment_k_factors,
@@ -3132,7 +3147,8 @@ if run_button or "results" in st.session_state:
                         "비드 높이 (mm)": bead_height,
                         "입구 압력 (MPa)": inlet_pressure,
                         "설계 유량 (LPM)": design_flow,
-                        "가지배관당 용접 비드": beads_per_branch,
+                        "헤드이음쇠": "사용" if use_head_fitting else "미사용",
+                        "레듀서 모드": reducer_mode,
                         "MC 반복 횟수": br["n_iterations"],
                     }]).to_excel(_w, sheet_name="입력 파라미터", index=False)
 
@@ -3208,7 +3224,8 @@ if run_button or "results" in st.session_state:
                     ("비드 높이", f"{bead_height} mm"),
                     ("입구 압력", f"{inlet_pressure} MPa"),
                     ("설계 유량", f"{design_flow} LPM"),
-                    ("가지배관당 용접 비드", f"{beads_per_branch}개"),
+                    ("헤드이음쇠", "사용 (K2=2.5)" if use_head_fitting else "미사용 (K2=1.4)"),
+                    ("레듀서 모드", reducer_mode),
                     ("MC 반복 횟수", f"{br['n_iterations']}회"),
                     ("분석 p 수준", f"{len(bsm['p_values'])}개: {bsm['p_values']}"),
                 ])
@@ -3334,7 +3351,9 @@ if run_button or "results" in st.session_state:
                     head_spacing_m=head_spacing,
                     inlet_pressure_mpa=inlet_pressure,
                     total_flow_lpm=float(design_flow),
-                    beads_per_branch=beads_per_branch,
+                    use_head_fitting=use_head_fitting,
+                    reducer_mode=reducer_mode,
+                    reducer_k_fixed=reducer_k_fixed,
                     topology=topology_key,
                     relaxation=hc_relaxation if topology_key == "grid" else 0.5,
                     equipment_k_factors=equipment_k_factors,

@@ -15,12 +15,12 @@ from constants import (
     DEFAULT_NUM_BRANCHES, DEFAULT_HEADS_PER_BRANCH,
     DEFAULT_BRANCH_SPACING_M, DEFAULT_HEAD_SPACING_M,
     K1_BASE, K2, K3,
+    DEFAULT_USE_HEAD_FITTING, DEFAULT_REDUCER_MODE, DEFAULT_REDUCER_K_FIXED,
 )
 from hydraulics import mpa_to_head, head_to_mpa
 from pipe_network import (
     build_default_network, calculate_pressure_profile,
     generate_dynamic_system, calculate_dynamic_system,
-    generate_branch_beads,
 )
 
 
@@ -76,7 +76,7 @@ class DynamicSystemCurve:
 
     * 다양한 유량에서 동적 시스템 전체(교차배관 + n개 가지배관)의
       최악 가지배관 총 손실 수두 + 최소 말단 수두를 반환
-    * 직관 용접 비드(beads_per_branch)를 균등 배치로 포함
+    * K2 토글(헤드이음쇠 유무) + 레듀서 손실 모드 지원
     """
 
     def __init__(
@@ -89,8 +89,9 @@ class DynamicSystemCurve:
         K1_base: float = K1_BASE,
         K2_val: float = K2,
         K3_val: float = K3,
-        beads_per_branch: int = 0,
-        bead_height_for_weld_mm: float = 1.5,
+        use_head_fitting: bool = DEFAULT_USE_HEAD_FITTING,
+        reducer_mode: str = DEFAULT_REDUCER_MODE,
+        reducer_k_fixed: float = DEFAULT_REDUCER_K_FIXED,
         topology: str = "tree",
         relaxation: float = 0.5,
     ):
@@ -102,29 +103,12 @@ class DynamicSystemCurve:
         self.K1_base = K1_base
         self.K2_val = K2_val
         self.K3_val = K3_val
-        self.beads_per_branch = beads_per_branch
-        self.bead_height_for_weld_mm = bead_height_for_weld_mm
+        self.use_head_fitting = use_head_fitting
+        self.reducer_mode = reducer_mode
+        self.reducer_k_fixed = reducer_k_fixed
         self.topology = topology
         self.relaxation = relaxation
         self.min_terminal_head = mpa_to_head(MIN_TERMINAL_PRESSURE_MPA)
-
-        # * 관경 리스트 사전 계산 (유량 무관, 헤드 수 기반)
-        from constants import auto_pipe_size
-        self._pipe_sizes = [
-            auto_pipe_size(heads_per_branch - h)
-            for h in range(heads_per_branch)
-        ]
-
-        # * 직관 용접 비드 균등 배치 사전 생성 (각 유량에서 재사용)
-        if beads_per_branch > 0:
-            single_beads = generate_branch_beads(
-                heads_per_branch, head_spacing_m, beads_per_branch,
-                bead_height_for_weld_mm, self._pipe_sizes, K1_base,
-                rng=None,
-            )
-            self._weld_beads_2d = [list(single_beads) for _ in range(num_branches)]
-        else:
-            self._weld_beads_2d = None
 
     def head_at_flow(self, Q_lpm: float) -> float:
         """주어진 유량에서 시스템이 요구하는 총 양정(m)"""
@@ -146,9 +130,9 @@ class DynamicSystemCurve:
                 K1_base=self.K1_base,
                 K2_val=self.K2_val,
                 K3_val=self.K3_val,
-                weld_beads_2d=self._weld_beads_2d,
-                beads_per_branch=self.beads_per_branch,
-                bead_height_for_weld_mm=self.bead_height_for_weld_mm,
+                use_head_fitting=self.use_head_fitting,
+                reducer_mode=self.reducer_mode,
+                reducer_k_fixed=self.reducer_k_fixed,
                 relaxation=self.relaxation,
             )
         else:
@@ -162,9 +146,13 @@ class DynamicSystemCurve:
                 bead_heights_2d=self.bead_heights_2d,
                 K1_base=self.K1_base,
                 K2_val=self.K2_val,
-                weld_beads_2d=self._weld_beads_2d,
+                use_head_fitting=self.use_head_fitting,
             )
-            result = calculate_dynamic_system(system, self.K3_val)
+            result = calculate_dynamic_system(
+                system, self.K3_val,
+                reducer_mode=self.reducer_mode,
+                reducer_k_fixed=self.reducer_k_fixed,
+            )
 
         # 최악 가지배관의 총 손실 = 입구 - 말단
         total_loss_mpa = dummy_inlet - result["worst_terminal_mpa"]

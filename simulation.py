@@ -12,9 +12,9 @@ from constants import (
     MIN_TERMINAL_PRESSURE_MPA,
     DEFAULT_NUM_BRANCHES, DEFAULT_HEADS_PER_BRANCH,
     DEFAULT_BRANCH_SPACING_M, DEFAULT_HEAD_SPACING_M,
-    DEFAULT_BEADS_PER_BRANCH,
     DEFAULT_BERNOULLI_MC_ITERATIONS,
     DEFAULT_SUPPLY_PIPE_SIZE,
+    DEFAULT_USE_HEAD_FITTING, DEFAULT_REDUCER_MODE, DEFAULT_REDUCER_K_FIXED,
 )
 from pipe_network import (
     generate_dynamic_system, calculate_dynamic_system,
@@ -42,7 +42,9 @@ def run_dynamic_monte_carlo(
     K1_base: float = K1_BASE,
     K2_val: float = K2,
     K3_val: float = K3,
-    beads_per_branch: int = 0,
+    use_head_fitting: bool = DEFAULT_USE_HEAD_FITTING,
+    reducer_mode: str = DEFAULT_REDUCER_MODE,
+    reducer_k_fixed: float = DEFAULT_REDUCER_K_FIXED,
     topology: str = "tree",
     relaxation: float = 0.5,
     equipment_k_factors: dict = None,
@@ -50,12 +52,10 @@ def run_dynamic_monte_carlo(
     branch_inlet_config: str = None,
 ) -> dict:
     """
-    ! 동적 시스템 몬테카를로: 이음쇠 결함 + 용접 비드 위치 무작위 시뮬레이션
+    ! 동적 시스템 몬테카를로: 이음쇠 결함 무작위 시뮬레이션
 
-    * 이음쇠 결함: n×m개 중 무작위 1~3개 배치 (기존)
-    * 용접 비드 위치: 매 반복마다 beads_per_branch개 비드가 각 가지배관의
-      직관 구간 내 새로운 임의 좌표에 재배치 (신규)
-    * 동일한 비드 개수라도 위치 변화에 따른 말단 압력 산포도 계산
+    * 이음쇠 결함: n×m개 중 무작위 1~3개 배치
+    * K2 토글(헤드이음쇠 유무) + 레듀서 손실 모드 지원
 
     반환:
         worst_terminal_pressures : 각 반복의 최악 말단 압력
@@ -63,7 +63,6 @@ def run_dynamic_monte_carlo(
         mean/std/min/max         : 통계값
         p_below_threshold        : 0.1 MPa 미달 확률
         defect_frequency_2d      : (n_branches × heads_per_branch) 이음쇠 결함 빈도 배열
-        beads_per_branch         : 가지배관당 용접 비드 개수 (참조용)
     """
     rng = np.random.default_rng()
     total_fittings = num_branches * heads_per_branch
@@ -106,15 +105,15 @@ def run_dynamic_monte_carlo(
             defect_frequency[b][h] += 1
             positions_2d.append((b, h))
 
-        # * 시스템 빌드 — 용접 비드는 rng로 매 반복 새로운 위치에 재배치
+        # * 시스템 빌드
         if topology == "grid":
             from hardy_cross import run_grid_system
             result = run_grid_system(
                 bead_heights_2d=beads_2d,
-                beads_per_branch=beads_per_branch,
-                bead_height_for_weld_mm=bead_height_mm,
-                rng=rng,
                 K3_val=K3_val,
+                use_head_fitting=use_head_fitting,
+                reducer_mode=reducer_mode,
+                reducer_k_fixed=reducer_k_fixed,
                 relaxation=relaxation,
                 equipment_k_factors=equipment_k_factors,
                 supply_pipe_size=supply_pipe_size,
@@ -123,16 +122,17 @@ def run_dynamic_monte_carlo(
         else:
             system = generate_dynamic_system(
                 bead_heights_2d=beads_2d,
-                beads_per_branch=beads_per_branch,
-                bead_height_for_weld_mm=bead_height_mm,
-                bead_height_std_for_weld_mm=bead_height_std_mm,
-                rng=rng,
+                use_head_fitting=use_head_fitting,
                 branch_inlet_config=branch_inlet_config,
                 **common,
             )
-            result = calculate_dynamic_system(system, K3_val,
-                                              equipment_k_factors=equipment_k_factors,
-                                              supply_pipe_size=supply_pipe_size)
+            result = calculate_dynamic_system(
+                system, K3_val,
+                reducer_mode=reducer_mode,
+                reducer_k_fixed=reducer_k_fixed,
+                equipment_k_factors=equipment_k_factors,
+                supply_pipe_size=supply_pipe_size,
+            )
 
         worst_pressures[trial] = result["worst_terminal_mpa"]
         defect_configs.append(positions_2d)
@@ -152,7 +152,6 @@ def run_dynamic_monte_carlo(
         "defect_frequency": defect_frequency.sum(axis=1),
         "n_iterations": n_iterations,
         "total_fittings": total_fittings,
-        "beads_per_branch": beads_per_branch,
     }
 
 
@@ -174,7 +173,9 @@ def run_bernoulli_monte_carlo(
     K1_base: float = K1_BASE,
     K2_val: float = K2,
     K3_val: float = K3,
-    beads_per_branch: int = 0,
+    use_head_fitting: bool = DEFAULT_USE_HEAD_FITTING,
+    reducer_mode: str = DEFAULT_REDUCER_MODE,
+    reducer_k_fixed: float = DEFAULT_REDUCER_K_FIXED,
     topology: str = "tree",
     relaxation: float = 0.5,
     equipment_k_factors: dict = None,
@@ -187,7 +188,6 @@ def run_bernoulli_monte_carlo(
     기존 MC와의 핵심 차이:
     - 기존 MC: min~max개 결함을 균일 무작위 선택
     - 베르누이 MC: 각 접합부 독립 Bernoulli(p_bead) 판정
-    - 용접 비드: rng=None (균등 배치, 매 시행 동일 위치)
     """
     rng = np.random.default_rng()
     total_fittings = num_branches * heads_per_branch
@@ -220,15 +220,15 @@ def run_bernoulli_monte_carlo(
                     count += 1
         bead_counts[trial] = count
 
-        # * 시스템 빌드 — 용접 비드는 균등 배치 (rng=None)
+        # * 시스템 빌드
         if topology == "grid":
             from hardy_cross import run_grid_system
             result = run_grid_system(
                 bead_heights_2d=beads_2d,
-                beads_per_branch=beads_per_branch,
-                bead_height_for_weld_mm=bead_height_mm,
-                rng=None,
                 K3_val=K3_val,
+                use_head_fitting=use_head_fitting,
+                reducer_mode=reducer_mode,
+                reducer_k_fixed=reducer_k_fixed,
                 relaxation=relaxation,
                 equipment_k_factors=equipment_k_factors,
                 supply_pipe_size=supply_pipe_size,
@@ -237,16 +237,17 @@ def run_bernoulli_monte_carlo(
         else:
             system = generate_dynamic_system(
                 bead_heights_2d=beads_2d,
-                beads_per_branch=beads_per_branch,
-                bead_height_for_weld_mm=bead_height_mm,
-                bead_height_std_for_weld_mm=bead_height_std_mm,
-                rng=None,
+                use_head_fitting=use_head_fitting,
                 branch_inlet_config=branch_inlet_config,
                 **common,
             )
-            result = calculate_dynamic_system(system, K3_val,
-                                              equipment_k_factors=equipment_k_factors,
-                                              supply_pipe_size=supply_pipe_size)
+            result = calculate_dynamic_system(
+                system, K3_val,
+                reducer_mode=reducer_mode,
+                reducer_k_fixed=reducer_k_fixed,
+                equipment_k_factors=equipment_k_factors,
+                supply_pipe_size=supply_pipe_size,
+            )
 
         worst_pressures[trial] = result["worst_terminal_mpa"]
 
@@ -265,7 +266,6 @@ def run_bernoulli_monte_carlo(
         "p_bead": p_bead,
         "n_iterations": n_iterations,
         "total_fittings": total_fittings,
-        "beads_per_branch": beads_per_branch,
     }
 
 
@@ -283,7 +283,9 @@ def run_bernoulli_sweep(
     K1_base: float = K1_BASE,
     K2_val: float = K2,
     K3_val: float = K3,
-    beads_per_branch: int = 0,
+    use_head_fitting: bool = DEFAULT_USE_HEAD_FITTING,
+    reducer_mode: str = DEFAULT_REDUCER_MODE,
+    reducer_k_fixed: float = DEFAULT_REDUCER_K_FIXED,
     topology: str = "tree",
     relaxation: float = 0.5,
     equipment_k_factors: dict = None,
@@ -314,7 +316,9 @@ def run_bernoulli_sweep(
             K1_base=K1_base,
             K2_val=K2_val,
             K3_val=K3_val,
-            beads_per_branch=beads_per_branch,
+            use_head_fitting=use_head_fitting,
+            reducer_mode=reducer_mode,
+            reducer_k_fixed=reducer_k_fixed,
             topology=topology,
             relaxation=relaxation,
             equipment_k_factors=equipment_k_factors,
@@ -363,7 +367,9 @@ def run_dynamic_sensitivity(
     K1_base: float = K1_BASE,
     K2_val: float = K2,
     K3_val: float = K3,
-    beads_per_branch: int = 0,
+    use_head_fitting: bool = DEFAULT_USE_HEAD_FITTING,
+    reducer_mode: str = DEFAULT_REDUCER_MODE,
+    reducer_k_fixed: float = DEFAULT_REDUCER_K_FIXED,
     topology: str = "tree",
     relaxation: float = 0.5,
     equipment_k_factors: dict = None,
@@ -374,7 +380,6 @@ def run_dynamic_sensitivity(
     ! 동적 시스템 민감도 분석
 
     * 최악 가지배관(가장 원격)의 각 헤드 위치에 단독 이음쇠 비드 배치
-    * 직관 용접 비드(beads_per_branch)는 균등 배치로 기준선에 포함
     * 어느 헤드 위치가 가장 치명적인지 식별
 
     반환:
@@ -397,13 +402,14 @@ def run_dynamic_sensitivity(
         K2_val=K2_val,
     )
 
-    # * 기준선: 이음쇠 비드 없음, 직관 용접 비드 포함 (균등 배치)
+    # * 기준선: 이음쇠 비드 없음
     if topology == "grid":
         from hardy_cross import run_grid_system
         res_base = run_grid_system(
-            beads_per_branch=beads_per_branch,
-            bead_height_for_weld_mm=bead_height_mm,
             K3_val=K3_val,
+            use_head_fitting=use_head_fitting,
+            reducer_mode=reducer_mode,
+            reducer_k_fixed=reducer_k_fixed,
             relaxation=relaxation,
             equipment_k_factors=equipment_k_factors,
             supply_pipe_size=supply_pipe_size,
@@ -411,14 +417,17 @@ def run_dynamic_sensitivity(
         )
     else:
         sys_base = generate_dynamic_system(
-            beads_per_branch=beads_per_branch,
-            bead_height_for_weld_mm=bead_height_mm,
+            use_head_fitting=use_head_fitting,
             branch_inlet_config=branch_inlet_config,
             **common,
         )
-        res_base = calculate_dynamic_system(sys_base, K3_val,
-                                            equipment_k_factors=equipment_k_factors,
-                                            supply_pipe_size=supply_pipe_size)
+        res_base = calculate_dynamic_system(
+            sys_base, K3_val,
+            reducer_mode=reducer_mode,
+            reducer_k_fixed=reducer_k_fixed,
+            equipment_k_factors=equipment_k_factors,
+            supply_pipe_size=supply_pipe_size,
+        )
     baseline = res_base["worst_terminal_mpa"]
     worst_branch = res_base["worst_branch_index"]
 
@@ -439,9 +448,10 @@ def run_dynamic_sensitivity(
         if topology == "grid":
             result = run_grid_system(
                 bead_heights_2d=beads_2d,
-                beads_per_branch=beads_per_branch,
-                bead_height_for_weld_mm=bead_height_mm,
                 K3_val=K3_val,
+                use_head_fitting=use_head_fitting,
+                reducer_mode=reducer_mode,
+                reducer_k_fixed=reducer_k_fixed,
                 relaxation=relaxation,
                 equipment_k_factors=equipment_k_factors,
                 supply_pipe_size=supply_pipe_size,
@@ -450,14 +460,17 @@ def run_dynamic_sensitivity(
         else:
             system = generate_dynamic_system(
                 bead_heights_2d=beads_2d,
-                beads_per_branch=beads_per_branch,
-                bead_height_for_weld_mm=bead_height_mm,
+                use_head_fitting=use_head_fitting,
                 branch_inlet_config=branch_inlet_config,
                 **common,
             )
-            result = calculate_dynamic_system(system, K3_val,
-                                              equipment_k_factors=equipment_k_factors,
-                                              supply_pipe_size=supply_pipe_size)
+            result = calculate_dynamic_system(
+                system, K3_val,
+                reducer_mode=reducer_mode,
+                reducer_k_fixed=reducer_k_fixed,
+                equipment_k_factors=equipment_k_factors,
+                supply_pipe_size=supply_pipe_size,
+            )
         p = result["worst_terminal_mpa"]
 
         single_pressures.append(p)
@@ -495,7 +508,9 @@ def run_variable_sweep(
     total_flow_lpm: float = DEFAULT_TOTAL_FLOW_LPM,
     bead_height_mm: float = 1.5,
     bead_height_std_mm: float = 0.0,
-    beads_per_branch: int = DEFAULT_BEADS_PER_BRANCH,
+    use_head_fitting: bool = DEFAULT_USE_HEAD_FITTING,
+    reducer_mode: str = DEFAULT_REDUCER_MODE,
+    reducer_k_fixed: float = DEFAULT_REDUCER_K_FIXED,
     topology: str = "tree",
     relaxation: float = 0.5,
     mc_min_defects: int = DEFAULT_MIN_DEFECTS,
@@ -534,7 +549,9 @@ def run_variable_sweep(
                     head_spacing_m=head_spacing_m,
                     inlet_pressure_mpa=inlet_pressure_mpa,
                     total_flow_lpm=total_flow_lpm,
-                    beads_per_branch=beads_per_branch,
+                    use_head_fitting=use_head_fitting,
+                    reducer_mode=reducer_mode,
+                    reducer_k_fixed=reducer_k_fixed,
                     topology=topology,
                     relaxation=relaxation,
                     equipment_k_factors=equipment_k_factors,
@@ -592,7 +609,9 @@ def run_variable_sweep(
                     head_spacing_m=head_spacing_m,
                     inlet_pressure_mpa=inlet_pressure_mpa,
                     total_flow_lpm=total_flow_lpm,
-                    beads_per_branch=beads_per_branch,
+                    use_head_fitting=use_head_fitting,
+                    reducer_mode=reducer_mode,
+                    reducer_k_fixed=reducer_k_fixed,
                     topology=topology,
                     relaxation=relaxation,
                     equipment_k_factors=equipment_k_factors,
@@ -639,7 +658,9 @@ def run_variable_sweep(
             total_flow_lpm=total_flow_lpm,
             bead_height_existing=bead_height_mm,
             bead_height_new=0.0,
-            beads_per_branch=beads_per_branch,
+            use_head_fitting=use_head_fitting,
+            reducer_mode=reducer_mode,
+            reducer_k_fixed=reducer_k_fixed,
             relaxation=relaxation,
             equipment_k_factors=equipment_k_factors,
             supply_pipe_size=supply_pipe_size,
@@ -813,7 +834,9 @@ def run_two_factor_sweep(
     K1_base: float = K1_BASE,
     K2_val: float = K2,
     K3_val: float = K3,
-    beads_per_branch: int = 0,
+    use_head_fitting: bool = DEFAULT_USE_HEAD_FITTING,
+    reducer_mode: str = DEFAULT_REDUCER_MODE,
+    reducer_k_fixed: float = DEFAULT_REDUCER_K_FIXED,
     topology: str = "tree",
     relaxation: float = 0.5,
     equipment_k_factors: dict = None,
@@ -856,7 +879,9 @@ def run_two_factor_sweep(
                 K1_base=K1_base,
                 K2_val=K2_val,
                 K3_val=K3_val,
-                beads_per_branch=beads_per_branch,
+                use_head_fitting=use_head_fitting,
+                reducer_mode=reducer_mode,
+                reducer_k_fixed=reducer_k_fixed,
                 topology=topology,
                 relaxation=relaxation,
                 equipment_k_factors=equipment_k_factors,

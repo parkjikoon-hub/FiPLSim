@@ -10,20 +10,23 @@ import numpy as np
 from constants import (
     PIPE_ASSIGNMENT, PIPE_DIMENSIONS, NUM_HEADS,
     K1_BASE, K2, K3, K_TEE_RUN, G, RHO,
+    K2_WITH_HEAD_FITTING, K2_WITHOUT_HEAD_FITTING, DEFAULT_USE_HEAD_FITTING,
+    DEFAULT_REDUCER_MODE, DEFAULT_REDUCER_K_FIXED,
+    REDUCER_MODE_CRANE, REDUCER_MODE_SUDDEN, REDUCER_MODE_FIXED, REDUCER_MODE_NONE,
+    REDUCER_ANGLES_DEG,
     DEFAULT_INLET_PRESSURE_MPA, DEFAULT_TOTAL_FLOW_LPM,
     DEFAULT_FITTING_SPACING_M, MIN_TERMINAL_PRESSURE_MPA,
     MAX_TERMINAL_PRESSURE_MPA, MAX_VELOCITY_BRANCH_MS, MAX_VELOCITY_OTHER_MS,
     DEFAULT_NUM_BRANCHES, DEFAULT_HEADS_PER_BRANCH,
     DEFAULT_BRANCH_SPACING_M, DEFAULT_HEAD_SPACING_M,
     MAX_BRANCHES, MAX_HEADS_PER_BRANCH,
-    DEFAULT_BEADS_PER_BRANCH, MAX_BEADS_PER_BRANCH,
     DEFAULT_SUPPLY_PIPE_SIZE,
     BRANCH_INLET_CONFIGS, DEFAULT_BRANCH_INLET_CONFIG,
     auto_pipe_size, auto_cross_main_size, get_inner_diameter_m,
 )
 from hydraulics import (
     velocity_from_flow, reynolds_number, friction_factor,
-    major_loss, minor_loss, k_welded_fitting,
+    major_loss, minor_loss, k_welded_fitting, k_reducer,
     head_to_mpa, mpa_to_head,
 )
 
@@ -52,76 +55,44 @@ class HeadJunction:
     head_flow_lpm: float
 
 
-@dataclass
-class WeldBead:
+# ══════════════════════════════════════════════
+#  PART 1-B: 레듀서 손실 계산 유틸리티
+# ══════════════════════════════════════════════
+
+def _calc_reducer_loss_mpa(
+    prev_size: str, curr_size: str, V_downstream: float,
+    reducer_mode: str = DEFAULT_REDUCER_MODE,
+    reducer_k_fixed: float = DEFAULT_REDUCER_K_FIXED,
+) -> float:
     """
-    ! 직관 구간 내 무작위 배치되는 용접 비드 객체
+    관경 전환 시 레듀서(점축소) 국부 손실 계산 (MPa)
 
-    * 헤드 사이 배관 구간(segment) 내 임의의 위치에 존재
-    * 국부 손실(minor loss)을 유발: h = K × V²/2g
-    * K값은 비드 높이와 해당 위치의 관경으로 결정
+    prev_size      : 상류 관경 (예: "50A")
+    curr_size      : 하류 관경 (예: "40A")
+    V_downstream   : 하류 유속 (m/s) — K값 기준 속도
+    reducer_mode   : "crane" / "sudden" / "fixed" / "none"
+    reducer_k_fixed: "fixed" 모드 시 사용할 K값
+
+    출처: Crane Technical Paper 410, ASME B16.9 레듀서 치수
     """
-    segment_index: int              # 소속 배관 구간 인덱스 (0 ~ m-1)
-    position_in_segment_m: float    # 구간 내 위치 (m, 0 ~ head_spacing_m)
-    bead_height_mm: float           # 비드 돌출 높이 (mm)
-    K_value: float                  # 산출된 K-factor (= K_base × (D/D_eff)⁴)
+    if reducer_mode == REDUCER_MODE_NONE:
+        return 0.0
+    if prev_size == curr_size:
+        return 0.0
 
+    prev_id_mm = PIPE_DIMENSIONS[prev_size]["id_mm"]
+    curr_id_mm = PIPE_DIMENSIONS[curr_size]["id_mm"]
+    if curr_id_mm >= prev_id_mm:
+        return 0.0  # 확대가 아닌 축소만 계산
 
-def generate_branch_beads(
-    heads_per_branch: int,
-    head_spacing_m: float,
-    num_beads: int,
-    bead_height_mm: float,
-    pipe_sizes: List[str],
-    K1_base: float = K1_BASE,
-    rng=None,
-    bead_height_std_mm: float = 0.0,
-) -> List[WeldBead]:
-    """
-    ! 가지배관 직관 구간 내 용접 비드 자동 생성
-
-    * rng=None → 균등 배치 (deterministic, 정적 비교용)
-    * rng=<Generator> → 무작위 배치 (Monte Carlo용)
-    * bead_height_std_mm > 0 → 비드 높이 정규분포 변동 (비균일 모델)
-
-    알고리즘:
-    1. 가지배관 전체 길이 = heads_per_branch × head_spacing_m
-    2. num_beads개 위치를 생성 (균등 or 랜덤)
-    3. 각 위치 → 소속 구간(segment_index) 결정
-    4. 해당 구간의 관경으로 K값 계산
-    """
-    if num_beads <= 0:
-        return []
-
-    total_length = heads_per_branch * head_spacing_m
-
-    if rng is not None:
-        # * 무작위 배치 (MC 시뮬레이션)
-        positions = sorted(rng.uniform(0, total_length, size=num_beads).tolist())
+    if reducer_mode == REDUCER_MODE_FIXED:
+        K_red = reducer_k_fixed
     else:
-        # * 균등 배치 (정적 비교용)
-        step = total_length / num_beads
-        positions = [step * (i + 0.5) for i in range(num_beads)]
+        theta = REDUCER_ANGLES_DEG.get((prev_size, curr_size), 10.0)
+        mode = "sudden" if reducer_mode == REDUCER_MODE_SUDDEN else "crane"
+        K_red = k_reducer(prev_id_mm, curr_id_mm, theta, mode)
 
-    beads = []
-    for pos in positions:
-        seg_idx = min(int(pos / head_spacing_m), heads_per_branch - 1)
-        pos_in_seg = pos - seg_idx * head_spacing_m
-        pipe_size = pipe_sizes[seg_idx]
-        pipe_id_mm = PIPE_DIMENSIONS[pipe_size]["id_mm"]
-        # * 비균일 모델: 각 비드마다 높이를 정규분포로 샘플링
-        if bead_height_std_mm > 0 and rng is not None:
-            h_b = max(0.0, rng.normal(bead_height_mm, bead_height_std_mm))
-        else:
-            h_b = bead_height_mm
-        K = k_welded_fitting(h_b, pipe_id_mm, K1_base)
-        beads.append(WeldBead(
-            segment_index=seg_idx,
-            position_in_segment_m=round(pos_in_seg, 4),
-            bead_height_mm=round(h_b, 3),
-            K_value=K,
-        ))
-    return beads
+    return head_to_mpa(minor_loss(K_red, V_downstream))
 
 
 # ══════════════════════════════════════════════
@@ -193,8 +164,6 @@ class BranchPipe:
     branch_flow_lpm: float = 0.0
     # * 아래 필드는 calculate 후에 채워짐
     pipe_sizes: List[str] = field(default_factory=list)
-    # * 직관 구간 내 용접 비드 목록 (generate_branch_beads로 생성)
-    weld_beads: List[WeldBead] = field(default_factory=list)
     # * 입구 배관 (65A 등, 교차배관→첫 헤드 사이 추가 구간, 헤드 없음)
     inlet_pipe_size: Optional[str] = None
     inlet_pipe_length_m: float = 0.0
@@ -235,8 +204,6 @@ class DynamicSystem:
     branches: List[BranchPipe] = field(default_factory=list)
     # * 2D 비드 배열: bead_heights[branch_idx][head_idx]
     bead_heights: List[List[float]] = field(default_factory=list)
-    # * 가지배관당 용접 비드 개수 (직관 구간 내 배치)
-    beads_per_branch: int = 0
 
 
 # ══════════════════════════════════════════════
@@ -253,15 +220,14 @@ def generate_dynamic_system(
     bead_heights_2d: Optional[List[List[float]]] = None,
     K1_base: float = K1_BASE,
     K2_val: float = K2,
-    beads_per_branch: int = 0,
-    bead_height_for_weld_mm: float = 1.5,
-    bead_height_std_for_weld_mm: float = 0.0,
-    weld_beads_2d: Optional[List[List[WeldBead]]] = None,
-    rng=None,
+    use_head_fitting: bool = DEFAULT_USE_HEAD_FITTING,
     branch_inlet_config: Optional[str] = None,
 ) -> DynamicSystem:
     """
     ! 사용자 입력 기반 동적 배관망 자동 생성
+
+    use_head_fitting: True → K2=K2_val(2.5), False → K2=K2_WITHOUT_HEAD_FITTING(1.4)
+      출처: Crane TP-410, K=60×fT (Tee branch flow)
 
     알고리즘:
     1. 입력값 검증
@@ -269,13 +235,9 @@ def generate_dynamic_system(
     3. 교차배관 구간 생성 (n-1개 구간)
     4. 각 가지배관 생성 (m개 헤드, 관경 자동 선정)
     5. 이음쇠 비드(junction bead) 배열 적용
-    6. 직관 구간 용접 비드(weld bead) 생성 및 배치
 
     bead_heights_2d   : [branch_idx][head_idx] = 이음쇠 비드 높이(mm), None이면 0.0
-    beads_per_branch  : 가지배관당 직관 구간 용접 비드 개수 (0이면 미사용)
-    bead_height_for_weld_mm : 직관 용접 비드 높이(mm)
-    weld_beads_2d     : 사전 생성된 비드 객체 [branch_idx][beads], None이면 자동 생성
-    rng               : numpy RNG 객체 (None → 균등 배치, 제공 시 → 무작위 배치)
+    use_head_fitting  : True=헤드이음쇠 사용(K2=2.5), False=직접연결(K2=1.4)
     """
     # * Step 1: 입력 검증
     validate_dynamic_inputs(
@@ -347,28 +309,17 @@ def generate_dynamic_system(
 
             bead_h = bead_heights_2d[b][h]
             K1 = k_welded_fitting(bead_h, id_mm, K1_base)
+            K2_actual = K2_val if use_head_fitting else K2_WITHOUT_HEAD_FITTING
 
             junction = HeadJunction(
                 index=h,
                 pipe_segment=segment,
                 bead_height_mm=bead_h,
                 K1_welded=K1,
-                K2_head=K2_val,
+                K2_head=K2_actual,
                 head_flow_lpm=head_flow,
             )
             junctions.append(junction)
-
-        # * Step 7: 직관 구간 용접 비드 생성
-        if weld_beads_2d is not None:
-            branch_beads = weld_beads_2d[b]
-        elif beads_per_branch > 0:
-            branch_beads = generate_branch_beads(
-                heads_per_branch, head_spacing_m, beads_per_branch,
-                bead_height_for_weld_mm, pipe_sizes, K1_base, rng=rng,
-                bead_height_std_mm=bead_height_std_for_weld_mm,
-            )
-        else:
-            branch_beads = []
 
         bp = BranchPipe(
             branch_index=b,
@@ -376,7 +327,6 @@ def generate_dynamic_system(
             junctions=junctions,
             branch_flow_lpm=branch_flow,
             pipe_sizes=pipe_sizes,
-            weld_beads=branch_beads,
             inlet_pipe_size=_inlet_pipe,
             inlet_pipe_length_m=_inlet_pipe_length,
         )
@@ -393,7 +343,6 @@ def generate_dynamic_system(
         cross_main_segments=cross_main_segments,
         branches=branches,
         bead_heights=bead_heights_2d,
-        beads_per_branch=beads_per_branch,
     )
 
 
@@ -406,6 +355,8 @@ def _calculate_branch_profile(
     branch_inlet_pressure_mpa: float,
     K3_val: float = K3,
     bead_velocity_model: str = "upstream",
+    reducer_mode: str = DEFAULT_REDUCER_MODE,
+    reducer_k_fixed: float = DEFAULT_REDUCER_K_FIXED,
 ) -> dict:
     """
     단일 가지배관의 압력 프로파일 계산 (내부 함수)
@@ -413,6 +364,8 @@ def _calculate_branch_profile(
     branch_inlet_pressure_mpa: 교차배관 분기점에서의 압력 (교차배관 손실 반영 후)
     bead_velocity_model: "upstream" = K_eff × V² (D/D_eff)^4 모델
                          "constriction" = K_eff × V_eff² (D/D_eff)^8 모델
+    reducer_mode: 레듀서 손실 모드 (crane/sudden/fixed/none)
+      출처: Crane Technical Paper 410, ASME B16.9
     """
     n = branch.num_heads
     total_flow = branch.branch_flow_lpm
@@ -453,9 +406,22 @@ def _calculate_branch_profile(
         current_p -= K3_loss
         current_loss += K3_loss
 
+    # * 입구 레듀서 손실 (65A→50A 등, 입구관과 첫 헤드 구간 관경이 다를 때)
+    inlet_reducer_mpa = 0.0
+    if branch.inlet_pipe_size:
+        first_size = branch.junctions[0].pipe_segment.nominal_size
+        if branch.inlet_pipe_size != first_size:
+            first_id_m = branch.junctions[0].pipe_segment.inner_diameter_m
+            V_first = velocity_from_flow(total_flow, first_id_m)
+            inlet_reducer_mpa = _calc_reducer_loss_mpa(
+                branch.inlet_pipe_size, first_size, V_first,
+                reducer_mode, reducer_k_fixed)
+            current_p -= inlet_reducer_mpa
+            current_loss += inlet_reducer_mpa
+
     # * 3항 분리 누적 변수 초기화
     total_loss_pipe = inlet_pipe_friction_mpa    # ΔP_pipe: 배관 마찰 손실
-    total_loss_fitting = K3_loss                 # ΔP_fitting: 이음쇠 기본 손실 (K3 포함)
+    total_loss_fitting = K3_loss + inlet_reducer_mpa  # ΔP_fitting: 이음쇠 기본 손실 (K3 + 입구 레듀서)
     total_loss_bead = 0.0                        # ΔP_bead: 비드 추가 손실
 
     for i, junc in enumerate(branch.junctions):
@@ -480,21 +446,23 @@ def _calculate_branch_profile(
         p_K1_base = head_to_mpa(minor_loss(K1_BASE, V))
         p_K1_bead = max(0.0, p_K1 - p_K1_base)
 
-        # * 직관 구간 내 용접 비드 국부 손실 합산
-        beads_in_seg = [b for b in branch.weld_beads if b.segment_index == i]
-        p_weld_beads = sum(
-            head_to_mpa(minor_loss(b.K_value, V)) for b in beads_in_seg
-        )
-        n_beads_in_seg = len(beads_in_seg)
+        # * 레듀서 국부 손실 (관경 전환 시) — Crane TP-410 / ASME B16.9
+        p_reducer = 0.0
+        if i > 0:
+            prev_size = branch.junctions[i - 1].pipe_segment.nominal_size
+            curr_size = seg.nominal_size
+            if prev_size != curr_size:
+                p_reducer = _calc_reducer_loss_mpa(
+                    prev_size, curr_size, V, reducer_mode, reducer_k_fixed)
 
-        total_seg_loss = p_major + p_K1 + p_K2 + p_weld_beads
+        total_seg_loss = p_major + p_K1 + p_K2 + p_reducer
         current_p -= total_seg_loss
         current_loss += total_seg_loss
 
         # * 3항 분리 누적
         total_loss_pipe += p_major
-        total_loss_fitting += p_K1_base + p_K2
-        total_loss_bead += p_K1_bead + p_weld_beads
+        total_loss_fitting += p_K1_base + p_K2 + p_reducer
+        total_loss_bead += p_K1_bead
 
         pressures.append(current_p)
         cumulative_loss.append(current_loss)
@@ -510,8 +478,7 @@ def _calculate_branch_profile(
             "K1_value": round(junc.K1_welded, 4),
             "K1_loss_mpa": round(p_K1, 6),
             "K2_loss_mpa": round(p_K2, 6),
-            "weld_beads_in_seg": n_beads_in_seg,
-            "weld_bead_loss_mpa": round(p_weld_beads, 6),
+            "reducer_loss_mpa": round(p_reducer, 6),
             "total_seg_loss_mpa": round(total_seg_loss, 6),
             "pressure_after_mpa": round(current_p, 6),
             "bead_height_mm": junc.bead_height_mm,
@@ -539,6 +506,8 @@ def calculate_dynamic_system(
     equipment_k_factors: Optional[dict] = None,
     supply_pipe_size: str = DEFAULT_SUPPLY_PIPE_SIZE,
     bead_velocity_model: str = "upstream",
+    reducer_mode: str = DEFAULT_REDUCER_MODE,
+    reducer_k_fixed: float = DEFAULT_REDUCER_K_FIXED,
 ) -> dict:
     """
     ! 전체 동적 시스템 압력 계산
@@ -632,6 +601,8 @@ def calculate_dynamic_system(
             branch_inlet_pressures[b],
             K3_val,
             bead_velocity_model=bead_velocity_model,
+            reducer_mode=reducer_mode,
+            reducer_k_fixed=reducer_k_fixed,
         )
         branch_profiles.append(profile)
         all_terminal_pressures.append(profile["terminal_pressure_mpa"])
@@ -676,13 +647,15 @@ def calculate_system_delta_p(
     branch_spacing_m: float = DEFAULT_BRANCH_SPACING_M,
     head_spacing_m: float = DEFAULT_HEAD_SPACING_M,
     bead_height_mm: float = 0.0,
-    beads_per_branch: int = 0,
     K1_base: float = K1_BASE,
     K2_val: float = K2,
     K3_val: float = K3,
     equipment_k_factors: Optional[dict] = None,
     supply_pipe_size: str = DEFAULT_SUPPLY_PIPE_SIZE,
     branch_inlet_config: Optional[str] = None,
+    use_head_fitting: bool = DEFAULT_USE_HEAD_FITTING,
+    reducer_mode: str = DEFAULT_REDUCER_MODE,
+    reducer_k_fixed: float = DEFAULT_REDUCER_K_FIXED,
 ) -> dict:
     """
     ! DynamicSystem 객체 없이 수식만으로 시스템 총 ΔP 직접 계산
@@ -693,9 +666,8 @@ def calculate_system_delta_p(
     알고리즘:
     1. 장비 K-factor 손실 (공급배관 유속 기준)
     2. 교차배관 손실 (최악 경로 B#4까지 누적)
-    3. 분기 입구 손실 (K3 + 입구관 마찰)
-    4. 가지배관 손실 (8헤드 순회, 관경 자동 선정)
-    5. 직관 용접 비드 손실 (균등 배치, 결정론적)
+    3. 분기 입구 손실 (K3 + 입구관 마찰 + 입구 레듀서)
+    4. 가지배관 손실 (8헤드 순회, 관경 자동 선정 + 관경 전환 레듀서)
 
     반환: delta_p 항목별 분리 dict
     """
@@ -766,13 +738,22 @@ def calculate_system_delta_p(
             major_loss(f_inlet, _inlet_pipe_length, inlet_id_m, V_inlet)
         )
         dp_pipe += inlet_pipe_friction
+        # 입구 레듀서 (65A→50A 등)
+        if _inlet_pipe != pipe_sizes[0]:
+            first_id_m_temp = get_inner_diameter_m(pipe_sizes[0])
+            V_first_temp = velocity_from_flow(branch_flow, first_id_m_temp)
+            dp_fitting += _calc_reducer_loss_mpa(
+                _inlet_pipe, pipe_sizes[0], V_first_temp, reducer_mode, reducer_k_fixed)
     else:
         first_id_m = get_inner_diameter_m(pipe_sizes[0])
         V_inlet = velocity_from_flow(branch_flow, first_id_m)
         K3_loss = head_to_mpa(minor_loss(K3_val, V_inlet))
         dp_fitting += K3_loss
 
-    # ── Step 4: 가지배관 순회 (8헤드) ──
+    # K2 실제값 결정
+    K2_actual = K2_val if use_head_fitting else K2_WITHOUT_HEAD_FITTING
+
+    # ── Step 4: 가지배관 순회 (8헤드) + 관경 전환 레듀서 ──
     for i in range(heads_per_branch):
         seg_size = pipe_sizes[i]
         seg_id_m = get_inner_diameter_m(seg_size)
@@ -795,22 +776,13 @@ def calculate_system_delta_p(
         dp_bead += p_K1_bead
 
         # 헤드 K2 손실
-        p_K2 = head_to_mpa(minor_loss(K2_val, V))
+        p_K2 = head_to_mpa(minor_loss(K2_actual, V))
         dp_fitting += p_K2
 
-    # ── Step 5: 직관 용접 비드 손실 (균등 배치) ──
-    if beads_per_branch > 0:
-        weld_beads = generate_branch_beads(
-            heads_per_branch, head_spacing_m, beads_per_branch,
-            bead_height_mm if bead_height_mm > 0 else 1.5,
-            pipe_sizes, K1_base, rng=None,
-        )
-        for wb in weld_beads:
-            seg_idx = wb.segment_index
-            seg_id_m = get_inner_diameter_m(pipe_sizes[seg_idx])
-            segment_flow = branch_flow - seg_idx * head_flow
-            V = velocity_from_flow(segment_flow, seg_id_m)
-            dp_bead += head_to_mpa(minor_loss(wb.K_value, V))
+        # 레듀서 손실 (관경 전환 시) — Crane TP-410
+        if i > 0 and pipe_sizes[i] != pipe_sizes[i - 1]:
+            dp_fitting += _calc_reducer_loss_mpa(
+                pipe_sizes[i - 1], pipe_sizes[i], V, reducer_mode, reducer_k_fixed)
 
     dp_total = dp_pipe + dp_fitting + dp_bead
 
@@ -841,15 +813,17 @@ def compare_dynamic_cases(
     K1_base: float = K1_BASE,
     K2_val: float = K2,
     K3_val: float = K3,
-    beads_per_branch: int = 0,
     equipment_k_factors: Optional[dict] = None,
     supply_pipe_size: str = DEFAULT_SUPPLY_PIPE_SIZE,
     branch_inlet_config: str = None,
+    use_head_fitting: bool = DEFAULT_USE_HEAD_FITTING,
+    reducer_mode: str = DEFAULT_REDUCER_MODE,
+    reducer_k_fixed: float = DEFAULT_REDUCER_K_FIXED,
 ) -> dict:
     """
     ! 동적 시스템에서 Case A(기존) vs Case B(신기술) 비교
 
-    * Case A: 이음쇠 비드(bead_height_existing) + 직관 용접 비드(beads_per_branch, 균등 배치)
+    * Case A: 이음쇠 비드(bead_height_existing)
     * Case B: 비드 없음(신기술)
     반환: 양쪽 전체 시스템 결과, 최악 가지배관 프로파일, 개선율, Pass/Fail
     """
@@ -862,30 +836,29 @@ def compare_dynamic_cases(
         total_flow_lpm=total_flow_lpm,
         K1_base=K1_base,
         K2_val=K2_val,
+        use_head_fitting=use_head_fitting,
     )
 
     beads_A = [[bead_height_existing] * heads_per_branch for _ in range(num_branches)]
     beads_B = [[bead_height_new] * heads_per_branch for _ in range(num_branches)]
 
-    # * Case A: 기존 기술 — 이음쇠 비드 + 직관 용접 비드 (균등 배치)
     sys_A = generate_dynamic_system(
         bead_heights_2d=beads_A,
-        beads_per_branch=beads_per_branch,
-        bead_height_for_weld_mm=bead_height_existing,
-        rng=None,
         branch_inlet_config=branch_inlet_config,
         **common,
     )
-    # * Case B: 신기술 — 비드 없음
     sys_B = generate_dynamic_system(
         bead_heights_2d=beads_B,
-        beads_per_branch=0,
         branch_inlet_config=branch_inlet_config,
         **common,
     )
 
-    result_A = calculate_dynamic_system(sys_A, K3_val, equipment_k_factors, supply_pipe_size)
-    result_B = calculate_dynamic_system(sys_B, K3_val, equipment_k_factors, supply_pipe_size)
+    result_A = calculate_dynamic_system(
+        sys_A, K3_val, equipment_k_factors, supply_pipe_size,
+        reducer_mode=reducer_mode, reducer_k_fixed=reducer_k_fixed)
+    result_B = calculate_dynamic_system(
+        sys_B, K3_val, equipment_k_factors, supply_pipe_size,
+        reducer_mode=reducer_mode, reducer_k_fixed=reducer_k_fixed)
 
     term_A = result_A["worst_terminal_mpa"]
     term_B = result_B["worst_terminal_mpa"]
@@ -1127,7 +1100,9 @@ def compare_dynamic_cases_with_topology(
     K1_base: float = K1_BASE,
     K2_val: float = K2,
     K3_val: float = K3,
-    beads_per_branch: int = 0,
+    use_head_fitting: bool = DEFAULT_USE_HEAD_FITTING,
+    reducer_mode: str = DEFAULT_REDUCER_MODE,
+    reducer_k_fixed: float = DEFAULT_REDUCER_K_FIXED,
     relaxation: float = 0.5,
     equipment_k_factors: Optional[dict] = None,
     supply_pipe_size: str = DEFAULT_SUPPLY_PIPE_SIZE,
@@ -1153,7 +1128,9 @@ def compare_dynamic_cases_with_topology(
             K1_base=K1_base,
             K2_val=K2_val,
             K3_val=K3_val,
-            beads_per_branch=beads_per_branch,
+            use_head_fitting=use_head_fitting,
+            reducer_mode=reducer_mode,
+            reducer_k_fixed=reducer_k_fixed,
             equipment_k_factors=equipment_k_factors,
             supply_pipe_size=supply_pipe_size,
             branch_inlet_config=branch_inlet_config,
@@ -1172,6 +1149,9 @@ def compare_dynamic_cases_with_topology(
         K1_base=K1_base,
         K2_val=K2_val,
         K3_val=K3_val,
+        use_head_fitting=use_head_fitting,
+        reducer_mode=reducer_mode,
+        reducer_k_fixed=reducer_k_fixed,
     )
 
     beads_A = [[bead_height_existing] * heads_per_branch for _ in range(num_branches)]
@@ -1179,9 +1159,6 @@ def compare_dynamic_cases_with_topology(
 
     result_A = run_grid_system(
         bead_heights_2d=beads_A,
-        beads_per_branch=beads_per_branch,
-        bead_height_for_weld_mm=bead_height_existing,
-        rng=None,
         relaxation=relaxation,
         equipment_k_factors=equipment_k_factors,
         supply_pipe_size=supply_pipe_size,
@@ -1189,7 +1166,6 @@ def compare_dynamic_cases_with_topology(
     )
     result_B = run_grid_system(
         bead_heights_2d=beads_B,
-        beads_per_branch=0,
         relaxation=relaxation,
         equipment_k_factors=equipment_k_factors,
         supply_pipe_size=supply_pipe_size,

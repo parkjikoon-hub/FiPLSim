@@ -132,13 +132,14 @@ D_eff = D - 2 × h_b
 | active_heads (N_act) | heads_per_branch | 1~total_heads | 동시 작동 헤드 수 |
 | design_flow (자동) | N_act × 80 | 100~5000 | 설계 유량 (LPM) |
 
-### 3.3 용접 비드
+### 3.3 이음쇠 비드 (Fitting Bead)
 
 | 변수명 | 기본값 | 범위 | 설명 |
 |--------|--------|------|------|
 | bead_height_mm | 1.5 | 0.1~5.0 | 기존 기술 비드 돌출 높이 (mm) |
 | bead_height_std_mm | 0.0 | 0.0~2.0 | 비드 높이 표준편차 — 비균일 모델 (mm) |
-| beads_per_branch | 5 | 0~20 | 가지배관당 직관 용접 비드 개수 |
+| use_head_fitting | True | True/False | 헤드이음쇠 사용 여부 (K2=2.5 / 1.4) |
+| reducer_mode | "crane" | crane/sudden/fixed/none | 레듀서 손실 모드 (Crane TP-410 기본) |
 
 ### 3.4 몬테카를로 시뮬레이션
 
@@ -475,8 +476,7 @@ streamlit run app.py
 python3 test_grid.py          # 46개 (Grid 배관망)
 python3 test_integration.py   # 48개 (통합 테스트)
 python3 test_valve.py         # 63개 (밸브/기기류)
-python3 test_weld_beads.py    # 38개 (용접 비드)
-# 총 195개 테스트
+# 총 157개 테스트
 ```
 
 ### 환경 설정

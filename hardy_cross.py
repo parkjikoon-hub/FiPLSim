@@ -14,7 +14,9 @@ from constants import (
     DEFAULT_NUM_BRANCHES, DEFAULT_HEADS_PER_BRANCH,
     DEFAULT_BRANCH_SPACING_M, DEFAULT_HEAD_SPACING_M,
     DEFAULT_INLET_PRESSURE_MPA, DEFAULT_TOTAL_FLOW_LPM,
-    DEFAULT_BEADS_PER_BRANCH, MAX_BEADS_PER_BRANCH,
+    K2_WITH_HEAD_FITTING, K2_WITHOUT_HEAD_FITTING, DEFAULT_USE_HEAD_FITTING,
+    DEFAULT_REDUCER_MODE, DEFAULT_REDUCER_K_FIXED,
+    REDUCER_MODE_NONE,
     DEFAULT_SUPPLY_PIPE_SIZE,
     auto_pipe_size, auto_cross_main_size, get_inner_diameter_m,
 )
@@ -24,8 +26,8 @@ from hydraulics import (
     head_to_mpa, mpa_to_head,
 )
 from pipe_network import (
-    PipeSegment, HeadJunction, WeldBead, BranchPipe,
-    generate_branch_beads, validate_dynamic_inputs,
+    PipeSegment, HeadJunction, BranchPipe,
+    _calc_reducer_loss_mpa, validate_dynamic_inputs,
 )
 
 
@@ -68,7 +70,6 @@ class GridPipe:
     # * 가지배관 전용
     branch_index: int = -1
     junctions: List[HeadJunction] = field(default_factory=list)
-    weld_beads: List[WeldBead] = field(default_factory=list)
     heads_per_branch: int = 0
 
 
@@ -99,7 +100,6 @@ class GridNetwork:
     branch_spacing_m: float
     head_spacing_m: float
     cross_main_size: str
-    beads_per_branch: int = 0
 
 
 # ══════════════════════════════════════════════
@@ -121,10 +121,7 @@ def generate_grid_network(
     bead_heights_2d: Optional[List[List[float]]] = None,
     K1_base: float = K1_BASE,
     K2_val: float = K2,
-    beads_per_branch: int = 0,
-    bead_height_for_weld_mm: float = 1.5,
-    weld_beads_2d: Optional[List[List[WeldBead]]] = None,
-    rng=None,
+    use_head_fitting: bool = DEFAULT_USE_HEAD_FITTING,
     **_extra,
 ) -> GridNetwork:
     """
@@ -216,6 +213,10 @@ def generate_grid_network(
         col = b + 1  # 가지배관이 연결되는 열 (1-indexed)
         pid = pipe_id_counter
 
+        # * K2 토글: 헤드이음쇠 유무에 따라 K2 선택
+        #   출처: Crane Technical Paper 410 (K2_WITHOUT = 60×fT ≈ 1.4)
+        K2_actual = K2_val if use_head_fitting else K2_WITHOUT_HEAD_FITTING
+
         # * 가지배관 내부 구조 (HeadJunction + PipeSegment)
         junctions = []
         pipe_sizes = []
@@ -239,21 +240,10 @@ def generate_grid_network(
                 pipe_segment=segment,
                 bead_height_mm=bead_h,
                 K1_welded=K1,
-                K2_head=K2_val,
+                K2_head=K2_actual,
                 head_flow_lpm=head_flow,
             )
             junctions.append(junction)
-
-        # * 직관 구간 용접 비드
-        if weld_beads_2d is not None:
-            branch_beads = list(weld_beads_2d[b])
-        elif beads_per_branch > 0:
-            branch_beads = generate_branch_beads(
-                heads_per_branch, head_spacing_m, beads_per_branch,
-                bead_height_for_weld_mm, pipe_sizes, K1_base, rng=rng,
-            )
-        else:
-            branch_beads = []
 
         total_branch_length = heads_per_branch * head_spacing_m
 
@@ -267,7 +257,6 @@ def generate_grid_network(
             length_m=total_branch_length,
             branch_index=b,
             junctions=junctions,
-            weld_beads=branch_beads,
             heads_per_branch=heads_per_branch,
         ))
         branch_pipe_ids.append(pid)
@@ -348,7 +337,6 @@ def generate_grid_network(
         branch_spacing_m=branch_spacing_m,
         head_spacing_m=head_spacing_m,
         cross_main_size=cross_main_size,
-        beads_per_branch=beads_per_branch,
     )
 
 
@@ -431,12 +419,16 @@ def _verify_kirchhoff(pipes, nodes, total_flow_lpm):
 #  PART 3: 배관별 수두 손실 계산
 # ══════════════════════════════════════════════
 
-def _pipe_head_loss(pipe: GridPipe, Q_abs_lpm: float, K1_base: float, K3_val: float) -> float:
+def _pipe_head_loss(
+    pipe: GridPipe, Q_abs_lpm: float, K1_base: float, K3_val: float,
+    reducer_mode: str = DEFAULT_REDUCER_MODE,
+    reducer_k_fixed: float = DEFAULT_REDUCER_K_FIXED,
+) -> float:
     """
     ! 단일 배관의 총 수두 손실 (m) — 유량의 절대값 기준
 
     * 교차배관(cm_top/cm_bot): 주손실 + Tee-Run 부차손실
-    * 가지배관(branch): 전체 구간 통합 손실 (주손실 + K1 + K2 + K3 + WeldBead)
+    * 가지배관(branch): 전체 구간 통합 손실 (주손실 + K1 + K2 + K3 + 레듀서)
     * 연결배관(connector): 주손실만
     """
     if Q_abs_lpm < 0.01:
@@ -459,7 +451,10 @@ def _pipe_head_loss(pipe: GridPipe, Q_abs_lpm: float, K1_base: float, K3_val: fl
         return major_loss(f, pipe.length_m, D, V)
 
     elif pipe.pipe_type == "branch":
-        return _branch_total_head_loss(pipe, Q_abs_lpm, K1_base, K3_val)
+        return _branch_total_head_loss(
+            pipe, Q_abs_lpm, K1_base, K3_val,
+            reducer_mode, reducer_k_fixed,
+        )
 
     return 0.0
 
@@ -467,12 +462,15 @@ def _pipe_head_loss(pipe: GridPipe, Q_abs_lpm: float, K1_base: float, K3_val: fl
 def _branch_total_head_loss(
     pipe: GridPipe, Q_total_lpm: float,
     K1_base: float, K3_val: float,
+    reducer_mode: str = DEFAULT_REDUCER_MODE,
+    reducer_k_fixed: float = DEFAULT_REDUCER_K_FIXED,
 ) -> float:
     """
     ! 가지배관 전체의 총 수두 손실 (m)
 
-    * 입구 K3 분기손실 + 각 헤드 구간 (주손실 + K1 + K2 + WeldBead)
+    * 입구 K3 분기손실 + 각 헤드 구간 (주손실 + K1 + K2 + 레듀서)
     * 유량은 헤드마다 감소: Q_seg = Q_total - i * (Q_total / m)
+    * 레듀서: 관경 전환점(65A→50A 등)에서 Crane TP-410 기반 K값 적용
     """
     if Q_total_lpm < 0.01 or pipe.heads_per_branch == 0:
         return 0.0
@@ -501,11 +499,18 @@ def _branch_total_head_loss(
         h_K1 = minor_loss(junc.K1_welded, V)
         h_K2 = minor_loss(junc.K2_head, V)
 
-        # * WeldBead 손실
-        beads_in_seg = [b for b in pipe.weld_beads if b.segment_index == i]
-        h_weld = sum(minor_loss(b.K_value, V) for b in beads_in_seg)
+        # * 레듀서 손실 (관경 전환 시)
+        #   출처: Crane Technical Paper 410, ASME B16.9
+        h_reducer = 0.0
+        if i > 0:
+            prev_size = pipe.junctions[i - 1].pipe_segment.nominal_size
+            curr_size = seg.nominal_size
+            if prev_size != curr_size:
+                h_reducer = mpa_to_head(_calc_reducer_loss_mpa(
+                    prev_size, curr_size, V, reducer_mode, reducer_k_fixed,
+                ))
 
-        total_h += h_major + h_K1 + h_K2 + h_weld
+        total_h += h_major + h_K1 + h_K2 + h_reducer
 
     return total_h
 
@@ -522,6 +527,8 @@ def solve_hardy_cross(
     tolerance_m: float = HC_TOLERANCE_M,
     tolerance_lpm: float = HC_TOLERANCE_LPM,
     relaxation: float = HC_RELAXATION_FACTOR,
+    reducer_mode: str = DEFAULT_REDUCER_MODE,
+    reducer_k_fixed: float = DEFAULT_REDUCER_K_FIXED,
 ) -> dict:
     """
     ! Hardy-Cross 반복법으로 격자 배관망의 유량 분배를 수렴 계산
@@ -569,7 +576,8 @@ def solve_hardy_cross(
                 Q_abs = abs(pipe.flow_lpm)
 
                 # * 배관 수두 손실 (항상 양수)
-                h = _pipe_head_loss(pipe, Q_abs, K1_base, K3_val)
+                h = _pipe_head_loss(pipe, Q_abs, K1_base, K3_val,
+                                    reducer_mode, reducer_k_fixed)
 
                 # * 부호 적용: 유량이 루프 순회 방향이면 +, 반대면 -
                 if Q_signed >= 0:
@@ -638,6 +646,8 @@ def calculate_grid_pressures(
     hc_result: Optional[dict] = None,
     equipment_k_factors: Optional[dict] = None,
     supply_pipe_size: str = DEFAULT_SUPPLY_PIPE_SIZE,
+    reducer_mode: str = DEFAULT_REDUCER_MODE,
+    reducer_k_fixed: float = DEFAULT_REDUCER_K_FIXED,
 ) -> dict:
     """
     ! Hardy-Cross 수렴 후 확정된 유량으로 모든 노드 압력 및 가지배관 프로파일 계산
@@ -703,7 +713,8 @@ def calculate_grid_pressures(
 
             # * 이 배관을 통과할 때의 수두 손실
             Q_abs = abs(pipe.flow_lpm)
-            h_loss = _pipe_head_loss(pipe, Q_abs, K1_base, K3_val)
+            h_loss = _pipe_head_loss(pipe, Q_abs, K1_base, K3_val,
+                                     reducer_mode, reducer_k_fixed)
             p_loss = head_to_mpa(h_loss)
 
             # * 유량 방향과 이동 방향이 같으면 압력 감소, 반대면 증가
@@ -759,6 +770,7 @@ def calculate_grid_pressures(
         # * 상세 프로파일 계산
         profile = _calculate_grid_branch_profile(
             branch_pipe, inlet_p, abs(Q_branch), K3_val,
+            reducer_mode, reducer_k_fixed,
         )
         branch_profiles.append(profile)
         all_terminal_pressures.append(profile["terminal_pressure_mpa"])
@@ -781,6 +793,29 @@ def calculate_grid_pressures(
         worst_terminal = 0.0
 
     cm_cumulative = sum(cross_main_losses)
+
+    # ── Step 4.5: 교차배관 3항 분리 (TOP 경로 기준) ──
+    #   최악 가지배관까지의 TOP 교차배관을 따라 주손실/이음쇠 손실 분리
+    cm_loss_pipe = 0.0
+    cm_loss_fitting = equipment_loss_mpa  # 밸브류 = 이음쇠 손실 분류
+
+    worst_col = worst_idx + 1
+    for p in pipes:
+        if p.pipe_type != "cm_top":
+            continue
+        # 입구(col 0) → 최악 가지배관(worst_col)까지의 TOP 파이프만 대상
+        p_col = p.start_node_id % n_cols   # start_node col index
+        if p_col >= worst_col:
+            continue
+        Q_abs = abs(p.flow_lpm)
+        if Q_abs < 0.01:
+            continue
+        D = p.inner_diameter_m
+        V = velocity_from_flow(Q_abs, D)
+        Re = reynolds_number(V, D)
+        f = friction_factor(Re, D=D)
+        cm_loss_pipe += head_to_mpa(major_loss(f, p.length_m, D, V))
+        cm_loss_fitting += head_to_mpa(minor_loss(K_TEE_RUN, V))
 
     # ── Step 5: 노드별 유입/유출 유량 데이터 생성 (학술 논문용) ──
     node_data = []
@@ -814,6 +849,12 @@ def calculate_grid_pressures(
             "pressure_mpa": round(node_pressures.get(node.id, 0.0), 6),
         })
 
+    # * 최악 가지배관의 3항 + 교차배관 3항 합산 (시스템 전체)
+    wp = branch_profiles[worst_idx] if branch_profiles else {}
+    system_loss_pipe = cm_loss_pipe + wp.get("loss_pipe_mpa", 0.0)
+    system_loss_fitting = cm_loss_fitting + wp.get("loss_fitting_mpa", 0.0)
+    system_loss_bead = wp.get("loss_bead_mpa", 0.0)
+
     result = {
         "branch_inlet_pressures": branch_inlet_pressures,
         "branch_profiles": branch_profiles,
@@ -826,6 +867,10 @@ def calculate_grid_pressures(
         "cross_main_size": network.cross_main_size,
         "equipment_loss_mpa": equipment_loss_mpa,
         "equipment_loss_details": equipment_loss_details,
+        # 3항 분리 손실 (최악 경로: 교차배관 TOP + 최악 가지배관)
+        "loss_pipe_mpa": round(system_loss_pipe, 6),
+        "loss_fitting_mpa": round(system_loss_fitting, 6),
+        "loss_bead_mpa": round(system_loss_bead, 6),
         # * Grid 전용 필드
         "topology": "grid",
         "node_data": node_data,
@@ -848,12 +893,15 @@ def _calculate_grid_branch_profile(
     branch_inlet_pressure_mpa: float,
     Q_total_lpm: float,
     K3_val: float,
+    reducer_mode: str = DEFAULT_REDUCER_MODE,
+    reducer_k_fixed: float = DEFAULT_REDUCER_K_FIXED,
 ) -> dict:
     """
     ! Grid 내 단일 가지배관의 압력 프로파일 (기존 _calculate_branch_profile 호환)
 
     * Tree 버전과 동일한 반환 형식을 유지하여 UI 호환
     * 유량은 Hardy-Cross에서 결정된 총 유량 사용
+    * 레듀서 손실: 관경 전환점에서 Crane TP-410 기반 K값 적용
     """
     m = pipe.heads_per_branch
     if m == 0 or Q_total_lpm < 0.01:
@@ -884,6 +932,11 @@ def _calculate_grid_branch_profile(
     current_p -= K3_loss
     current_loss += K3_loss
 
+    # * 3항 분리 누적 변수 초기화 (Tree 버전과 동일 패턴)
+    total_loss_pipe = 0.0               # ΔP_pipe: 배관 마찰 손실
+    total_loss_fitting = K3_loss        # ΔP_fitting: 이음쇠 기본 손실 (K3)
+    total_loss_bead = 0.0               # ΔP_bead: 비드 추가 손실
+
     for i, junc in enumerate(pipe.junctions):
         seg = junc.pipe_segment
         seg_flow = Q_total_lpm - i * head_flow
@@ -898,13 +951,29 @@ def _calculate_grid_branch_profile(
         p_K1 = head_to_mpa(minor_loss(junc.K1_welded, V))
         p_K2 = head_to_mpa(minor_loss(junc.K2_head, V))
 
-        beads_in_seg = [b for b in pipe.weld_beads if b.segment_index == i]
-        p_weld_beads = sum(head_to_mpa(minor_loss(b.K_value, V)) for b in beads_in_seg)
-        n_beads_in_seg = len(beads_in_seg)
+        # * K1 → 이음쇠 기본(K_base) + 비드 추가분 분리
+        p_K1_base = head_to_mpa(minor_loss(K1_BASE, V))
+        p_K1_bead = max(0.0, p_K1 - p_K1_base)
 
-        total_seg_loss = p_major + p_K1 + p_K2 + p_weld_beads
+        # * 레듀서 손실 (관경 전환 시)
+        #   출처: Crane Technical Paper 410, ASME B16.9
+        p_reducer = 0.0
+        if i > 0:
+            prev_size = pipe.junctions[i - 1].pipe_segment.nominal_size
+            curr_size = seg.nominal_size
+            if prev_size != curr_size:
+                p_reducer = _calc_reducer_loss_mpa(
+                    prev_size, curr_size, V, reducer_mode, reducer_k_fixed,
+                )
+
+        total_seg_loss = p_major + p_K1 + p_K2 + p_reducer
         current_p -= total_seg_loss
         current_loss += total_seg_loss
+
+        # * 3항 분리 누적
+        total_loss_pipe += p_major
+        total_loss_fitting += p_K1_base + p_K2 + p_reducer
+        total_loss_bead += p_K1_bead
 
         pressures.append(current_p)
         cumulative_loss.append(current_loss)
@@ -920,8 +989,7 @@ def _calculate_grid_branch_profile(
             "K1_value": round(junc.K1_welded, 4),
             "K1_loss_mpa": round(p_K1, 6),
             "K2_loss_mpa": round(p_K2, 6),
-            "weld_beads_in_seg": n_beads_in_seg,
-            "weld_bead_loss_mpa": round(p_weld_beads, 6),
+            "reducer_loss_mpa": round(p_reducer, 6),
             "total_seg_loss_mpa": round(total_seg_loss, 6),
             "pressure_after_mpa": round(current_p, 6),
             "bead_height_mm": junc.bead_height_mm,
@@ -934,6 +1002,10 @@ def _calculate_grid_branch_profile(
         "terminal_pressure_mpa": pressures[-1],
         "K3_loss_mpa": K3_loss,
         "segment_details": seg_details,
+        # 3항 분리 손실 (가지배관 내)
+        "loss_pipe_mpa": round(total_loss_pipe, 6),
+        "loss_fitting_mpa": round(total_loss_fitting, 6),
+        "loss_bead_mpa": round(total_loss_bead, 6),
     }
 
 
@@ -952,10 +1024,9 @@ def run_grid_system(
     K1_base: float = K1_BASE,
     K2_val: float = K2,
     K3_val: float = K3,
-    beads_per_branch: int = 0,
-    bead_height_for_weld_mm: float = 1.5,
-    weld_beads_2d: Optional[List[List[WeldBead]]] = None,
-    rng=None,
+    use_head_fitting: bool = DEFAULT_USE_HEAD_FITTING,
+    reducer_mode: str = DEFAULT_REDUCER_MODE,
+    reducer_k_fixed: float = DEFAULT_REDUCER_K_FIXED,
     relaxation: float = HC_RELAXATION_FACTOR,
     equipment_k_factors: Optional[dict] = None,
     supply_pipe_size: str = DEFAULT_SUPPLY_PIPE_SIZE,
@@ -966,6 +1037,8 @@ def run_grid_system(
     * generate_dynamic_system() + calculate_dynamic_system() 과 동등한 역할
     * 반환 형식도 동일하여 UI/시뮬레이션 코드에서 투명하게 사용 가능
     * relaxation: Under-relaxation 이완 계수 (0.1 ~ 1.0)
+    * reducer_mode: "crane"(기본) / "sudden" / "fixed" / "none"
+    *   출처: Crane Technical Paper 410, ASME B16.9
     """
     network = generate_grid_network(
         num_branches=num_branches,
@@ -977,18 +1050,17 @@ def run_grid_system(
         bead_heights_2d=bead_heights_2d,
         K1_base=K1_base,
         K2_val=K2_val,
-        beads_per_branch=beads_per_branch,
-        bead_height_for_weld_mm=bead_height_for_weld_mm,
-        weld_beads_2d=weld_beads_2d,
-        rng=rng,
+        use_head_fitting=use_head_fitting,
     )
 
     hc_result = solve_hardy_cross(
         network, K1_base=K1_base, K3_val=K3_val, relaxation=relaxation,
+        reducer_mode=reducer_mode, reducer_k_fixed=reducer_k_fixed,
     )
 
     return calculate_grid_pressures(
         network, K1_base=K1_base, K3_val=K3_val, hc_result=hc_result,
         equipment_k_factors=equipment_k_factors,
         supply_pipe_size=supply_pipe_size,
+        reducer_mode=reducer_mode, reducer_k_fixed=reducer_k_fixed,
     )

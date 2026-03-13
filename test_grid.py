@@ -80,7 +80,7 @@ check(result["hc_iterations"] == hc["iterations"], "HC iterations stored in resu
 # Branch profiles have segment details
 profile0 = result["branch_profiles"][0]
 check(len(profile0["segment_details"]) == 4, "Branch 0 has 4 segment details")
-check("weld_beads_in_seg" in profile0["segment_details"][0], "Segment details have weld_beads_in_seg")
+check("reducer_loss_mpa" in profile0["segment_details"][0], "Segment details have reducer_loss_mpa")
 
 
 # == Test 4: Grid vs Tree comparison - Grid should have higher pressure ==
@@ -92,7 +92,6 @@ common_params = dict(
     branch_spacing_m=3.5, head_spacing_m=2.3,
     inlet_pressure_mpa=1.4, total_flow_lpm=400.0,
     bead_height_existing=1.5, bead_height_new=0.0,
-    beads_per_branch=0,
 )
 
 tree_result = compare_dynamic_cases_with_topology(topology="tree", **common_params)
@@ -128,21 +127,21 @@ check(result_one["hc_converged"] is True, "run_grid_system converged")
 check(result_one["worst_terminal_mpa"] > 0, f"One-step result positive: {result_one['worst_terminal_mpa']:.4f}")
 
 
-# == Test 6: Grid with weld beads ==
-print("\n[6] Grid with weld beads")
+# == Test 6: Grid with bead heights (reducer loss) ==
+print("\n[6] Grid with bead heights (reducer loss)")
 result_no_beads = run_grid_system(
     num_branches=2, heads_per_branch=4,
     inlet_pressure_mpa=1.4, total_flow_lpm=200.0,
-    beads_per_branch=0,
+    bead_heights_2d=[[0.0]*4]*2,
 )
 result_with_beads = run_grid_system(
     num_branches=2, heads_per_branch=4,
     inlet_pressure_mpa=1.4, total_flow_lpm=200.0,
-    beads_per_branch=5, bead_height_for_weld_mm=1.5,
+    bead_heights_2d=[[1.5]*4]*2,
 )
 check(
     result_with_beads["worst_terminal_mpa"] < result_no_beads["worst_terminal_mpa"],
-    f"Weld beads reduce pressure: {result_with_beads['worst_terminal_mpa']:.4f} < {result_no_beads['worst_terminal_mpa']:.4f}",
+    f"Bead heights reduce pressure: {result_with_beads['worst_terminal_mpa']:.4f} < {result_no_beads['worst_terminal_mpa']:.4f}",
 )
 
 
@@ -154,7 +153,7 @@ mc = run_dynamic_monte_carlo(
     n_iterations=10, min_defects=1, max_defects=2,
     bead_height_mm=1.5, num_branches=2, heads_per_branch=4,
     inlet_pressure_mpa=1.4, total_flow_lpm=200.0,
-    beads_per_branch=0, topology="grid",
+    topology="grid",
 )
 check(mc["mean_pressure"] > 0, f"MC grid mean > 0: {mc['mean_pressure']:.4f}")
 check(mc["std_pressure"] >= 0, f"MC grid std >= 0: {mc['std_pressure']:.6f}")
@@ -168,7 +167,7 @@ from simulation import run_dynamic_sensitivity
 sens = run_dynamic_sensitivity(
     bead_height_mm=1.5, num_branches=2, heads_per_branch=4,
     inlet_pressure_mpa=1.4, total_flow_lpm=200.0,
-    beads_per_branch=0, topology="grid",
+    topology="grid",
 )
 check(len(sens["deltas"]) == 4, f"Sensitivity: 4 deltas (got {len(sens['deltas'])})")
 check(sens["baseline_pressure"] > 0, f"Baseline > 0: {sens['baseline_pressure']:.4f}")
@@ -186,7 +185,6 @@ ds_grid = DynamicSystemCurve(
     num_branches=20, heads_per_branch=10,
     branch_spacing_m=3.5, head_spacing_m=2.3,
     bead_heights_2d=[[1.5]*10]*20,
-    beads_per_branch=0,
     topology="grid",
 )
 h_grid = ds_grid.head_at_flow(400)
@@ -210,7 +208,6 @@ result_big = run_grid_system(
     num_branches=50, heads_per_branch=10,
     branch_spacing_m=3.5, head_spacing_m=2.3,
     inlet_pressure_mpa=1.4, total_flow_lpm=2000.0,
-    beads_per_branch=5, bead_height_for_weld_mm=1.5,
 )
 dt = time.time() - t0
 check(result_big["hc_converged"] is True, f"Large scale converged in {result_big['hc_iterations']} iterations")

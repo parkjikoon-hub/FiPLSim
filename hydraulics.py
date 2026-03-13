@@ -121,6 +121,39 @@ def minor_loss(K: float, V: float) -> float:
 # ──────────────────────────────────────────────
 # ? 비드 높이 → K1 계수 변환
 # ──────────────────────────────────────────────
+def k_reducer(d1_mm: float, d2_mm: float, theta_deg: float = 10.0,
+              mode: str = "crane") -> float:
+    """
+    ! 레듀서(점축소) K값 계산 — 하류(작은 배관) 속도 기준
+
+    d1_mm     : 상류 내경 (mm, 큰 쪽)
+    d2_mm     : 하류 내경 (mm, 작은 쪽)
+    theta_deg : 축소 원뿔 각도 (도) — ASME B16.9 레듀서 치수로 산출
+    mode      : "crane" = Crane TP-410 점진축소, "sudden" = 급축소 이론식
+
+    Crane TP-410 (θ < 45°):  K = 0.8 × sin(θ/2) × (1 - β²)
+    Crane TP-410 (θ ≥ 45°):  K = 0.5 × √sin(θ/2) × (1 - β²)
+    급축소:                   K = 0.5 × (1 - β²)
+
+    β = d₂/d₁ (직경비)
+    """
+    if d1_mm <= 0 or d2_mm <= 0 or d2_mm >= d1_mm:
+        return 0.0
+
+    beta = d2_mm / d1_mm
+    one_minus_beta2 = 1.0 - beta ** 2
+
+    if mode == "sudden":
+        return 0.5 * one_minus_beta2
+
+    # Crane TP-410
+    theta_rad = math.radians(theta_deg)
+    if theta_deg < 45:
+        return 0.8 * math.sin(theta_rad / 2) * one_minus_beta2
+    else:
+        return 0.5 * math.sqrt(math.sin(theta_rad / 2)) * one_minus_beta2
+
+
 def k_welded_fitting(bead_height_mm: float, pipe_id_mm: float, base_K: float = 0.5) -> float:
     """
     ! 용접 비드 높이에 따른 배관이음쇠 K-factor 계산
