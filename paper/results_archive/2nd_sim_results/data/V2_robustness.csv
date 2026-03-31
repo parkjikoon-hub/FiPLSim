@@ -1,0 +1,10 @@
+﻿case_id,topology,branch_inlet_config,num_branches,heads_per_branch,active_heads,total_flow_lpm,inlet_pressure_mpa,bead_height_mm,bead_height_std_mm,defect_count,p_bead,mc_iterations,terminal_pressure_mpa,pressure_margin_mpa,pass_fail,loss_pipe_mpa,loss_fitting_mpa,loss_bead_mpa,required_extra_inlet_pressure_mpa,worst_branch_index,ranking_or_location_id,mean_terminal_mpa,std_terminal_mpa,P5_terminal_mpa,P50_terminal_mpa,P95_terminal_mpa,fail_rate,fail_rate_CI95_low,fail_rate_CI95_high,model_parameter
+V2,tree,80A-65A,4,8,32,2560.0,0.5314,1.5,,,,,0.08493561550669315,-0.015064384493306854,,0.114858,0.317865,0.013741,,,,,,,,,,,,baseline
+V2,tree,80A-65A,4,8,32,2560.0,0.5314,1.5,,,,,0.08493561550669315,-0.015064384493306854,,0.114858,0.317865,0.013741,,,,,,,,,,,,reducer=crane
+V2,tree,80A-65A,4,8,32,2560.0,0.5314,1.5,,,,,0.07797275461227426,-0.02202724538772574,,0.114858,0.324828,0.013741,,,,,,,,,,,,reducer=sudden
+V2,tree,80A-65A,4,8,32,2560.0,0.5314,1.5,,,,,0.0858761200487595,-0.014123879951240509,,0.114858,0.316924,0.013741,,,,,,,,,,,,reducer=none
+V2,tree,80A-65A,4,8,32,2560.0,0.5314,1.5,,,,,0.08493561550669315,-0.015064384493306854,,0.114858,0.317865,0.013741,,,,,,,,,,,,head_fitting=True
+V2,tree,80A-65A,4,8,32,2560.0,0.5314,1.5,,,,,0.16442523730897096,0.06442523730897096,,0.114858,0.238375,0.013741,,,,,,,,,,,,head_fitting=False
+V2,tree,80A-65A,4,8,32,2560.0,0.5314,1.5,,,,,0.08992289367884478,-0.01007710632115523,,0.114858,0.317865,0.008754,,,,,,,,,,,,K_base=0.45
+V2,tree,80A-65A,4,8,32,2560.0,0.5314,1.5,,,,,0.08493561550669315,-0.015064384493306854,,0.114858,0.317865,0.013741,,,,,,,,,,,,K_base=0.5
+V2,tree,80A-65A,4,8,32,2560.0,0.5314,1.5,,,,,0.07994833733454171,-0.020051662665458297,,0.114858,0.317865,0.018728,,,,,,,,,,,,K_base=0.55

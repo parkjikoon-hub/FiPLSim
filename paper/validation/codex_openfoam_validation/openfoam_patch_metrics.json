@@ -1,0 +1,110 @@
+[
+  {
+    "case": "baseline",
+    "time": "1.5",
+    "patches": {
+      "inlet": {
+        "nFaces": 25,
+        "area_m2": 0.0004,
+        "p_area_avg_Pa": 9.7245424,
+        "flow_m3_s": -0.0031165758400000004,
+        "normal_velocity_avg_m_s": -7.7914396,
+        "speed_area_avg_m_s": 7.798385827986932
+      },
+      "outlet1": {
+        "nFaces": 25,
+        "area_m2": 0.00039999999999999996,
+        "p_area_avg_Pa": 9.9980792,
+        "flow_m3_s": 0.0012766041600000004,
+        "normal_velocity_avg_m_s": 3.191510400000001,
+        "speed_area_avg_m_s": 3.191770057941714
+      },
+      "outlet2": {
+        "nFaces": 25,
+        "area_m2": 0.00039999999999999996,
+        "p_area_avg_Pa": 0.006194294399999988,
+        "flow_m3_s": 0.0018376404800000007,
+        "normal_velocity_avg_m_s": 4.594101200000002,
+        "speed_area_avg_m_s": 4.594395753328672
+      }
+    },
+    "derived": {
+      "dp_inlet_to_outlet1_Pa": -0.2735367999999987,
+      "dp_inlet_to_outlet2_Pa": 9.7183481056,
+      "total_outflow_m3_s": 0.0031142446400000013,
+      "mass_balance_error_m3_s": -2.3311999999993654e-06
+    }
+  },
+  {
+    "case": "bead1p5",
+    "time": "1.5",
+    "patches": {
+      "inlet": {
+        "nFaces": 25,
+        "area_m2": 0.0004,
+        "p_area_avg_Pa": 10.0378748,
+        "flow_m3_s": -0.0031004745600000006,
+        "normal_velocity_avg_m_s": -7.751186400000001,
+        "speed_area_avg_m_s": 7.758085228568651
+      },
+      "outlet1": {
+        "nFaces": 30,
+        "area_m2": 0.00039999999999999996,
+        "p_area_avg_Pa": 9.99948217,
+        "flow_m3_s": 0.0012779349920000003,
+        "normal_velocity_avg_m_s": 3.194837480000001,
+        "speed_area_avg_m_s": 3.1950514391280236
+      },
+      "outlet2": {
+        "nFaces": 30,
+        "area_m2": 0.00039999999999999996,
+        "p_area_avg_Pa": 0.00506817197999998,
+        "flow_m3_s": 0.0018202243720000003,
+        "normal_velocity_avg_m_s": 4.550560930000001,
+        "speed_area_avg_m_s": 4.550843471336384
+      }
+    },
+    "derived": {
+      "dp_inlet_to_outlet1_Pa": 0.038392630000000594,
+      "dp_inlet_to_outlet2_Pa": 10.032806628020001,
+      "total_outflow_m3_s": 0.0030981593640000008,
+      "mass_balance_error_m3_s": -2.315195999999997e-06
+    }
+  },
+  {
+    "case": "bead3p0",
+    "time": "1.5",
+    "patches": {
+      "inlet": {
+        "nFaces": 25,
+        "area_m2": 0.0004,
+        "p_area_avg_Pa": 12.0525152,
+        "flow_m3_s": -0.00299455904,
+        "normal_velocity_avg_m_s": -7.4863976,
+        "speed_area_avg_m_s": 7.4930651579868535
+      },
+      "outlet1": {
+        "nFaces": 25,
+        "area_m2": 0.00039999999999999996,
+        "p_area_avg_Pa": 10.00009125,
+        "flow_m3_s": 0.0012424013800000002,
+        "normal_velocity_avg_m_s": 3.1060034500000007,
+        "speed_area_avg_m_s": 3.1062031760540743
+      },
+      "outlet2": {
+        "nFaces": 25,
+        "area_m2": 0.00039999999999999996,
+        "p_area_avg_Pa": 0.003072796634999989,
+        "flow_m3_s": 0.0017499834000000002,
+        "normal_velocity_avg_m_s": 4.374958500000001,
+        "speed_area_avg_m_s": 4.3751791484183356
+      }
+    },
+    "derived": {
+      "dp_inlet_to_outlet1_Pa": 2.0524239499999997,
+      "dp_inlet_to_outlet2_Pa": 12.049442403365001,
+      "total_outflow_m3_s": 0.00299238478,
+      "mass_balance_error_m3_s": -2.174259999999798e-06
+    }
+  }
+]

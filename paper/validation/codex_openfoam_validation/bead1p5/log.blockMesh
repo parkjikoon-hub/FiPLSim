@@ -1,0 +1,108 @@
+/*---------------------------------------------------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:                                        |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+Build  : OPENFOAM=1912 patch=200626
+Arch   : "LSB;label=32;scalar=64"
+Exec   : blockMesh
+Date   : Mar 20 2026
+Time   : 15:28:56
+Host   : DESKTOP-8MPCJP1
+PID    : 422
+I/O    : uncollated
+Case   : /root/openfoam_validation/bead1p5
+nProcs : 1
+trapFpe: Floating point exception trapping enabled (FOAM_SIGFPE).
+fileModificationChecking : Monitoring run-time modified files using timeStampMaster (fileModificationSkew 10)
+allowSystemOperations : Allowing user-supplied system call operations
+
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+Create time
+
+Creating block mesh from "system/blockMeshDict"
+Creating block edges
+No non-planar block faces defined
+Creating topology blocks
+Creating topology patches
+
+Creating block mesh topology
+--> FOAM Warning : 
+    From function Foam::polyMesh::polyMesh(const Foam::IOobject&, Foam::pointField&&, const Foam::cellShapeList&, const Foam::faceListList&, const Foam::wordList&, const Foam::PtrList<Foam::dictionary>&, const Foam::word&, const Foam::word&, bool)
+    in file meshes/polyMesh/polyMeshFromShapeMesh.C at line 867
+    Found 21 undefined faces in mesh; adding to default patch defaultFaces
+--> FOAM Warning : 
+    From function Foam::polyMesh::polyMesh(const Foam::IOobject&, Foam::pointField&&, const Foam::cellShapeList&, const Foam::faceListList&, const Foam::wordList&, const Foam::PtrList<Foam::dictionary>&, const Foam::word&, const Foam::word&, bool)
+    in file meshes/polyMesh/polyMeshFromShapeMesh.C at line 886
+    Reusing existing patch 3 for undefined faces.
+
+Check topology
+
+	Basic statistics
+		Number of internal faces : 5
+		Number of boundary faces : 26
+		Number of defined boundary faces : 26
+		Number of undefined boundary faces : 0
+	Checking patch -> block consistency
+
+Creating block offsets
+Creating merge list...
+
+Creating polyMesh from blockMesh
+Creating patches
+Creating cells
+Creating points with scale 1
+    Block 0 cell size :
+        i : 0.004 .. 0.004
+        j : 0.004 .. 0.004
+        k : 0.004 .. 0.004
+
+    Block 1 cell size :
+        i : 0.0037 .. 0.0037
+        j : 0.004 .. 0.004
+        k : 0.004 .. 0.004
+
+    Block 2 cell size :
+        i : 0.0037 .. 0.0037
+        j : 0.004 .. 0.004
+        k : 0.004 .. 0.004
+
+    Block 3 cell size :
+        i : 0.0015 .. 0.0015
+        j : 0.004 .. 0.004
+        k : 0.004 .. 0.004
+
+    Block 4 cell size :
+        i : 0.0037 .. 0.0037
+        j : 0.004 .. 0.004
+        k : 0.004 .. 0.004
+
+    Block 5 cell size :
+        i : 0.0015 .. 0.0015
+        j : 0.004 .. 0.004
+        k : 0.004 .. 0.004
+
+
+There are no merge patch pairs
+
+Writing polyMesh with 0 cellZones
+----------------
+Mesh Information
+----------------
+  boundingBox: (0 -0.21 0) (0.22 0.21 0.02)
+  nPoints: 6228
+  nCells: 4375
+  nFaces: 14810
+  nInternalFaces: 11440
+----------------
+Patches
+----------------
+  patch 0 (start: 11440 size: 25) name: inlet
+  patch 1 (start: 11465 size: 30) name: outlet1
+  patch 2 (start: 11495 size: 30) name: outlet2
+  patch 3 (start: 11525 size: 3285) name: defaultFaces
+
+End
+

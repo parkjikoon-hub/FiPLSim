@@ -1,0 +1,58 @@
+{
+  "script": "run_uni_bi_final.py",
+  "run_date": "2026-03-30T18:47:24.543596",
+  "description": "단방향 vs 양방향 비교 — 토폴로지 교정 (uni:이경엘보K=0.53, bi:T분기K=1.0)",
+  "defect_placement": "worst_branch_concentrated (positions 0~N-1)",
+  "constants": {
+    "K_TEE_BRANCH_80A": 1.06,
+    "K3_bi": 1.0,
+    "K_ELBOW_90_65A_uni": 0.53,
+    "K2": 2.5,
+    "K1_BASE": 0.5,
+    "USE_HEAD_FITTING": true,
+    "REDUCER_MODE": "crane",
+    "HEADS_PER_BRANCH": 8,
+    "HEAD_SPACING_M": 2.3,
+    "BRANCH_SPACING_M": 3.5,
+    "BRANCH_INLET_CONFIG_BI": "80A-65A",
+    "BRANCH_INLET_CONFIG_UNI": "80A-65A-elbow",
+    "SUPPLY_PIPE_SIZE": "100A",
+    "PASS_THRESHOLD_MPA": 0.1,
+    "P_REF": 0.537488,
+    "P_REF_basis": "bisect(uni, dc=0, bead=0, flow=DESIGN_FLOW_LPM) -> terminal=0.1 MPa",
+    "ACTIVE_HEADS": 32,
+    "DESIGN_FLOW_LPM": 2560.0,
+    "MC_ITER": 10000,
+    "EPSILON_MM": 0.046,
+    "RHO": 1000.0,
+    "MU": 0.001002,
+    "NU": 1.002e-06
+  },
+  "equipment_k_factors": {
+    "알람밸브 (습식)": {
+      "K": 2.0,
+      "qty": 1
+    },
+    "유수검지장치": {
+      "K": 1.0,
+      "qty": 1
+    },
+    "게이트밸브 (전개)": {
+      "K": 0.15,
+      "qty": 2
+    },
+    "체크밸브 (스윙형)": {
+      "K": 2.0,
+      "qty": 1
+    },
+    "90도 엘보": {
+      "K": 0.75,
+      "qty": 1
+    },
+    "리듀서 (점축소)": {
+      "K": 0.15,
+      "qty": 1
+    }
+  },
+  "git_revision": "e017358"
+}

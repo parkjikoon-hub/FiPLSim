@@ -1,0 +1,27 @@
+﻿phase,scenario,test_description,metric,value,conclusion_holds
+Phase1_K_sensitivity,7h_2.1m_K_ELBOW_0.45,"K_ELBOW=0.45, K3_bi=1.0, K_TEE=1.06",A1_gap_mpa,0.0073814676616233,True
+Phase1_K_sensitivity,7h_2.1m_K_ELBOW_0.53,"K_ELBOW=0.53, K3_bi=1.0, K_TEE=1.06",A1_gap_mpa,0.0070162039072246,True
+Phase1_K_sensitivity,7h_2.1m_K_ELBOW_0.6,"K_ELBOW=0.6, K3_bi=1.0, K_TEE=1.06",A1_gap_mpa,0.0066965981221255,True
+Phase1_K_sensitivity,7h_2.1m_K_ELBOW_0.75,"K_ELBOW=0.75, K3_bi=1.0, K_TEE=1.06",A1_gap_mpa,0.0060117285826275,True
+Phase1_K_sensitivity,7h_2.1m_K3_bi_0.9,"K_ELBOW=0.53, K3_bi=0.9, K_TEE=1.06",A1_gap_mpa,0.0065596242142259,True
+Phase1_K_sensitivity,7h_2.1m_K3_bi_1.0,"K_ELBOW=0.53, K3_bi=1.0, K_TEE=1.06",A1_gap_mpa,0.0070162039072246,True
+Phase1_K_sensitivity,7h_2.1m_K3_bi_1.1,"K_ELBOW=0.53, K3_bi=1.1, K_TEE=1.06",A1_gap_mpa,0.0074727836002232,True
+Phase1_K_sensitivity,7h_2.1m_K_TEE_0.9,"K_ELBOW=0.53, K3_bi=1.0, K_TEE=0.9",A1_gap_mpa,0.0021126835269435,True
+Phase1_K_sensitivity,7h_2.1m_K_TEE_1.06,"K_ELBOW=0.53, K3_bi=1.0, K_TEE=1.06",A1_gap_mpa,0.0070162039072246,True
+Phase1_K_sensitivity,7h_2.1m_K_TEE_1.2,"K_ELBOW=0.53, K3_bi=1.0, K_TEE=1.2",A1_gap_mpa,0.0113067842399704,True
+Phase1_K_sensitivity,7h_2.1m_elbow_low_tee_low,"K_ELBOW=0.45, K3_bi=1.0, K_TEE=0.9",A1_gap_mpa,0.0024779472813424,True
+Phase1_K_sensitivity,7h_2.1m_elbow_low_tee_high,"K_ELBOW=0.45, K3_bi=1.0, K_TEE=1.2",A1_gap_mpa,0.0116720479943693,True
+Phase1_K_sensitivity,7h_2.1m_elbow_high_tee_low,"K_ELBOW=0.75, K3_bi=1.0, K_TEE=0.9",A1_gap_mpa,0.0011082082023465,True
+Phase1_K_sensitivity,7h_2.1m_elbow_high_tee_high,"K_ELBOW=0.75, K3_bi=1.0, K_TEE=1.2",A1_gap_mpa,0.0103023089153733,True
+Phase2_placement,7h_2.1m_worst,"pattern=worst, topo=uni, dc=4",fail_rate,1.0,True
+Phase2_placement,7h_2.1m_worst,"pattern=worst, topo=bi, dc=4",fail_rate,1.0,True
+Phase2_placement,7h_2.1m_uniform,"pattern=uniform, topo=uni, dc=4",fail_rate,0.929,True
+Phase2_placement,7h_2.1m_uniform,"pattern=uniform, topo=bi, dc=4",fail_rate,1.0,True
+Phase2_placement,7h_2.1m_downstream,"pattern=downstream, topo=uni, dc=4",fail_rate,1.0,True
+Phase2_placement,7h_2.1m_downstream,"pattern=downstream, topo=bi, dc=4",fail_rate,1.0,True
+Phase2_placement,7h_2.1m_upstream,"pattern=upstream, topo=uni, dc=4",fail_rate,1.0,True
+Phase2_placement,7h_2.1m_upstream,"pattern=upstream, topo=bi, dc=4",fail_rate,1.0,True
+Phase3_imbalance,7h_2.1m_BI-0_symmetric,case=BI-0_symmetric,B1_gap_mpa,0.0070319999999999,True
+Phase3_imbalance,7h_2.1m_BI-1_plus1,case=BI-1_plus1,B1_gap_mpa,0.0187499999999999,True
+Phase3_imbalance,7h_2.1m_BI-2_plus2,case=BI-2_plus2,B1_gap_mpa,0.030469,True
+Phase3_imbalance,7h_2.1m_BI-3_defect_one_side,case=BI-3_defect_one_side,B1_gap_mpa,0.0070319999999999,True

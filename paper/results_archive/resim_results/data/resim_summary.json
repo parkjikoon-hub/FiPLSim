@@ -1,0 +1,22 @@
+{
+  "resimulation_date": "2026-03-24 10:32:25",
+  "new_P_REF_mpa": 0.532723,
+  "old_P_REF_mpa": 0.5314,
+  "delta_pref_kpa": 1.323,
+  "physics": {
+    "epsilon_mm": 0.046,
+    "rho_kg_m3": 1000.0,
+    "nu_m2_s": 1.002e-06
+  },
+  "campaigns_rerun": [
+    "D1b",
+    "D2",
+    "S1",
+    "F"
+  ],
+  "campaigns_unchanged": [
+    "S2b",
+    "P1b",
+    "asymmetry"
+  ]
+}

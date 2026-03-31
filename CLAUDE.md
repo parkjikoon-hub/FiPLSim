@@ -18,3 +18,9 @@
 - **실행 방법**: `streamlit run app.py`
 - **Python**: `python3` (버전 3.14)
 - **주요 파일**: constants.py, hydraulics.py, pipe_network.py, pump.py, simulation.py, app.py
+
+## 폴더 구조
+
+- **루트**: 핵심 프로그램 (constants.py, hydraulics.py, pipe_network.py, simulation.py, hardy_cross.py, pump.py, app.py, test_*.py)
+- **docs/**: 설계 문서, K값 근거, 참고자료 (Overview, Design Manual, K_ELBOW, K_TEE, 가지배관 제작 등)
+- **paper/**: 논문 관련 전체 (scripts/, data/, results_archive/, validation/, handover/)

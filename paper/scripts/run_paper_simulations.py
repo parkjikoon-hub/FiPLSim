@@ -23,6 +23,9 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 
+# ── 프로젝트 루트를 sys.path에 추가 (paper/scripts/ → 루트) ──
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+
 # ──────────────────────────────────────────────
 # 논문용 물성치 오버라이드 (코드 기본값과 다른 값)
 # ──────────────────────────────────────────────

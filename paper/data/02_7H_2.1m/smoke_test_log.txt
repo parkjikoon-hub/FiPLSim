@@ -1,0 +1,17 @@
+Smoke Test - 2026-03-30T13:17:26.910281
+K_TEE_BRANCH = 1.06
+K_ELBOW_90_65A = 0.53 (uni 분기 입구)
+K3 = 1.0 (bi 분기 입구)
+BRANCH_INLET: uni=80A-65A-elbow, bi=80A-65A
+HEAD_SPACING_M = 2.1
+
+[PASS] uni/bead=0/dc=0: 0.10000119295077256 (기대: ~0.1000)
+[PASS] bi/bead=0/dc=0: 0.09298498904354799 (기대: < 0.1000)
+[PASS] uni/bead=1.5/dc=2: 0.09786402102421479 (기대: < 0.1000)
+[PASS] bi/bead=1.5/dc=2: 0.03248582251936147 (기대: > 0)
+[PASS] K=1.06 tee_loss: 0.03248582251936147 (기대: ~0.032486)
+[PASS] K_ELBOW_90_65A (uni): 0.53 (기대: = 0.53)
+[PASS] K3 (bi): 1.0 (기대: = 1.0)
+[PASS] HEAD_SPACING_M: 2.1 (기대: > 0)
+[PASS] HEADS_PER_BRANCH: 7 (기대: = 7)
+[PASS] DESIGN_FLOW_LPM: 2240.0 (기대: = 2240.0)

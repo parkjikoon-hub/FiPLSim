@@ -1,0 +1,29 @@
+{
+  "script": "run_supplementary_sims.py",
+  "run_date": "2026-03-31T08:57:32.671542",
+  "phase": "3",
+  "scenario": "7h_2.1m",
+  "description": "보강 시뮬레이션 — 리뷰어 방어용 (K민감도/배치패턴/불균형)",
+  "constants": {
+    "K_ELBOW_DEFAULT": 0.53,
+    "K3_DEFAULT": 1.0,
+    "K_TEE_BRANCH_DEFAULT": 1.06,
+    "K2": 2.5,
+    "K1_BASE": 0.5,
+    "USE_HEAD_FITTING": true,
+    "REDUCER_MODE": "crane",
+    "HEADS_PER_BRANCH": 7,
+    "HEAD_SPACING_M": 2.1,
+    "BRANCH_SPACING_M": 3.5,
+    "BRANCH_INLET_CONFIG": "80A-65A",
+    "SUPPLY_PIPE_SIZE": "100A",
+    "PASS_THRESHOLD_MPA": 0.1,
+    "P_REF": 0.453674,
+    "DESIGN_FLOW_LPM": 2240.0,
+    "MC_ITER": 10000,
+    "EPSILON_MM": 0.046,
+    "RHO": 1000.0,
+    "NU": 1.002e-06
+  },
+  "git_revision": "e017358"
+}

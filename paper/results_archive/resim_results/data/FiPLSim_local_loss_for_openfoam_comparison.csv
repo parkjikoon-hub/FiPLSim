@@ -1,0 +1,7 @@
+﻿comparison_case_id,topology,branch_inlet_config,active_heads,inlet_pressure_mpa,ranking_or_location_id,pipe_size,bead_height_mm,local_pressure_drop_mpa,local_pressure_drop_kpa,equivalent_local_K,branch_side_flow_lpm,run_side_flow_lpm,baseline_relative_dp_ratio,baseline_relative_K_ratio,effective_diameter_mm,K_base,K_eff,local_velocity_m_s,Re_local,note
+F01_25A_0.0mm,tree,80A-65A,32,0.5327232837677002,6,25A,0.0,0.005722,5.722,0.5,160.0,80.0,1.0,1.0,26.64,0.5,0.5,4.7842,127197.0,"loc=6, 25A, bead=0.0mm"
+F02_25A_1.5mm,tree,80A-65A,32,0.5327232837677002,6,25A,1.5,0.009228,9.228,0.8063,160.0,80.0,1.6127,1.6126,23.64,0.5,0.8063,4.7842,127197.0,"loc=6, 25A, bead=1.5mm"
+F03_25A_3.0mm,tree,80A-65A,32,0.5327232837677002,6,25A,3.0,0.01588,15.88,1.3876,160.0,80.0,2.7753,2.7752,20.64,0.5,1.3876,4.7842,127197.0,"loc=6, 25A, bead=3.0mm"
+F04_40A_0.0mm,tree,80A-65A,32,0.5327232837677002,3,40A,0.0,0.006437,6.437,0.5,400.0,320.0,1.0,1.0,40.9,0.5,0.5,5.0743,207123.0,"loc=3, 40A, bead=0.0mm"
+F05_40A_1.5mm,tree,80A-65A,32,0.5327232837677002,3,40A,1.5,0.00873,8.73,0.6781,400.0,320.0,1.3562,1.3562,37.9,0.5,0.6781,5.0743,207123.0,"loc=3, 40A, bead=1.5mm"
+F06_40A_3.0mm,tree,80A-65A,32,0.5327232837677002,3,40A,3.0,0.012142,12.142,0.9431,400.0,320.0,1.8863,1.8862,34.9,0.5,0.9431,5.0743,207123.0,"loc=3, 40A, bead=3.0mm"
