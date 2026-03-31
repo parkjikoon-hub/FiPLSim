@@ -46,8 +46,25 @@ K2_WITHOUT_HEAD_FITTING = 1.4   # 배관이음쇠 + 헤드 직접 연결 — Cra
 #   출처: Crane Technical Paper 410, "Flow of Fluids Through Valves, Fittings, and Pipe"
 #   T분기 흐름(Branch Flow): K = 60 × fT, fT ≈ 0.023 (50A) ~ 0.026 (25A) → K ≈ 1.38 ~ 1.56
 DEFAULT_USE_HEAD_FITTING = True  # 기본: 헤드이음쇠 사용
-K3 = 1.0             # 분기 손실 (교차배관 → 가지배관 분기 입구, Tee-Branch)
+# T분기(Tee-Branch) 및 직진(Tee-Run) 손실계수
+#   근거: NFPA 13 (2019) Table 22.4.3.1.1 — "Tee or Cross (Flow Turned 90°)" 등가길이
+#         Darcy-Weisbach 변환: K = f_T × (L_eq / D)
+#         f_T = Colebrook-White 완전난류 마찰계수 (ε = 0.046 mm 기준)
+#   ┌──────┬──────────────┬────────┬────────┬───────┐
+#   │ 관경  │ L_eq (ft / m) │ L_eq/D │  f_T   │   K   │
+#   ├──────┼──────────────┼────────┼────────┼───────┤
+#   │ 25A  │  5 / 1.524   │  56.3  │ 0.0220 │  1.24 │
+#   │ 32A  │  6 / 1.829   │  52.5  │ 0.0210 │  1.10 │
+#   │ 40A  │  8 / 2.438   │  57.7  │ 0.0200 │  1.15 │
+#   │ 50A  │ 10 / 3.048   │  58.1  │ 0.0195 │  1.13 │
+#   │ 65A  │ 12 / 3.658   │  54.7  │ 0.0190 │  1.04 │
+#   │ 80A  │ 15 / 4.572   │  58.7  │ 0.0180 │  1.06 │
+#   └──────┴──────────────┴────────┴────────┴───────┘
+#   보조 출처: Crane TP-410 (K = 60×f_T, 80A→K≈1.08), Idelchik (2008) Diagram 7-18
+K3 = 1.0             # 분기 손실 (교차배관→가지배관 분기 입구, 65A 유속 기준, NFPA 13: K=1.04)
 K_TEE_RUN = 0.3      # 교차배관 직진 손실 (Tee-Run, 분기 후 직진 흐름)
+K_TEE_BRANCH_80A = 1.06  # 양방향 배관 입구 T분기 (80A 교차배관 유속 기준, NFPA 13)
+K_ELBOW_90_65A = 0.53    # 단방향 분기 입구 이경엘보 90° (65A 유속 기준, NFPA 13 Table 22.4.3.1.1)
 
 # ──────────────────────────────────────────────
 # ? 밸브/기기류 국부 손실 K-factor (수직 라이저 배관에 설치)
@@ -169,6 +186,12 @@ BRANCH_INLET_CONFIGS = {
         "cross_main_override": "65A",
         "inlet_pipe": "65A",
         "inlet_pipe_length_m": 0.3,
+    },
+    "80A-65A-elbow": {
+        "desc": "교차80A → 이경엘보90°(80/65A) → 레듀서 → 50A(헤드3) → 40A → 32A → 25A",
+        "cross_main_override": "80A",
+        "inlet_pipe": "65A",
+        "inlet_pipe_length_m": 0.0,
     },
 }
 DEFAULT_BRANCH_INLET_CONFIG = "80A-50A"
